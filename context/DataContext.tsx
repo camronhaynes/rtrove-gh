@@ -4,7 +4,7 @@ import type React from "react"
 import { createContext, useContext, useState, useEffect } from "react"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import type { Session } from "@supabase/supabase-js"
-import type { Project, Chat } from "../src/utils/types"
+import type { Project, Chat, Commitment } from "../src/utils/types"
 
 type User = {
   id: string
@@ -142,6 +142,12 @@ interface DataContextType extends AuthState {
   addUserPostComment: (postId: string, content: string, userId: string, username: string) => Promise<void>
   deleteUserPostComment: (postId: string, commentId: string) => Promise<void>
   deleteUserProfile: (userId: string) => Promise<void>
+  setProjectFundraisingGoal: (projectId: string, goal: number) => Promise<void>
+  getProjectFundraisingGoal: (projectId: string) => Promise<number | null>
+  addUserContribution: (projectId: string, userId: string, amount: number) => Promise<void>
+  getUserTotalContribution: (projectId: string, userId: string) => Promise<number>
+  getProjectTotalContributions: (projectId: string) => Promise<number>
+  getProjectCommitments: (projectId: string) => Promise<Commitment[]>
 }
 
 const STORAGE_KEYS = {
@@ -154,6 +160,9 @@ const STORAGE_KEYS = {
   FOLDER_VIEWS: "rtrove_v2_folder_views",
   CHATS: "rtrove_v2_chats",
   FORUM_POSTS: "rtrove_v2_forum_posts",
+  FUNDRAISING_GOALS: "rtrove_v2_fundraising_goals",
+  USER_CONTRIBUTIONS: "rtrove_v2_user_contributions",
+  PROJECT_COMMITMENTS: "rtrove_v2_project_commitments",
 } as const
 
 const DataContext = createContext<DataContextType | null>(null)
@@ -171,6 +180,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [folderViews, setFolderViews] = useState<FolderView[]>([])
   const [forumPosts, setForumPosts] = useState<ForumPost[]>([])
+  const [fundraisingGoals, setFundraisingGoals] = useState<Record<string, number>>({})
+  const [userContributions, setUserContributions] = useState<Record<string, number>>({})
+  const [projectCommitments, setProjectCommitments] = useState<Record<string, Commitment[]>>({})
 
   useEffect(() => {
     initializeData()
@@ -185,6 +197,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await loadFolderViews()
       await loadChats()
       await loadForumPosts()
+      await loadFundraisingData()
     } catch (error) {
       console.error("Error initializing data:", error)
     } finally {
@@ -897,8 +910,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const post = forumPosts.find((p) => p.id === postId)
 
       if (!post) {
-        thrownew
-        Error("Forum post not found")
+        throw new Error("Forum post not found")
       }
 
       const newComment: ForumComment = {
@@ -1072,6 +1084,96 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }
 
+  const loadFundraisingData = async () => {
+    try {
+      const storedGoals = await AsyncStorage.getItem(STORAGE_KEYS.FUNDRAISING_GOALS)
+      if (storedGoals) {
+        setFundraisingGoals(JSON.parse(storedGoals))
+      }
+
+      const storedContributions = await AsyncStorage.getItem(STORAGE_KEYS.USER_CONTRIBUTIONS)
+      if (storedContributions) {
+        setUserContributions(JSON.parse(storedContributions))
+      }
+
+      const storedCommitments = await AsyncStorage.getItem(STORAGE_KEYS.PROJECT_COMMITMENTS)
+      if (storedCommitments) {
+        setProjectCommitments(JSON.parse(storedCommitments))
+      }
+    } catch (error) {
+      console.error("Error loading fundraising data:", error)
+    }
+  }
+
+  const setProjectFundraisingGoal = async (projectId: string, goal: number) => {
+    try {
+      const updatedGoals = { ...fundraisingGoals, [projectId]: goal }
+      setFundraisingGoals(updatedGoals)
+      await AsyncStorage.setItem(STORAGE_KEYS.FUNDRAISING_GOALS, JSON.stringify(updatedGoals))
+
+      // Update the project in the local state
+      setProjects((prevProjects) => prevProjects.map((p) => (p.id === projectId ? { ...p, fundraisingGoal: goal } : p)))
+    } catch (error) {
+      console.error("Error setting project fundraising goal:", error)
+      throw new Error("Failed to set project fundraising goal")
+    }
+  }
+
+  const getProjectFundraisingGoal = async (projectId: string): Promise<number | null> => {
+    return fundraisingGoals[projectId] || null
+  }
+
+  const addUserContribution = async (projectId: string, userId: string, amount: number) => {
+    try {
+      const key = `${projectId}_${userId}`
+      const currentAmount = userContributions[key] || 0
+      const updatedContributions = { ...userContributions, [key]: currentAmount + amount }
+      setUserContributions(updatedContributions)
+      await AsyncStorage.setItem(STORAGE_KEYS.USER_CONTRIBUTIONS, JSON.stringify(updatedContributions))
+
+      const newCommitment: Commitment = {
+        userId,
+        amount,
+        timestamp: Date.now(),
+      }
+      const updatedCommitments = {
+        ...projectCommitments,
+        [projectId]: [...(projectCommitments[projectId] || []), newCommitment],
+      }
+      setProjectCommitments(updatedCommitments)
+      await AsyncStorage.setItem(STORAGE_KEYS.PROJECT_COMMITMENTS, JSON.stringify(updatedCommitments))
+
+      // Update the project in the local state
+      setProjects((prevProjects) =>
+        prevProjects.map((p) => {
+          if (p.id === projectId) {
+            const updatedCommitments = [...(p.commitments || []), newCommitment]
+            return { ...p, commitments: updatedCommitments }
+          }
+          return p
+        }),
+      )
+    } catch (error) {
+      console.error("Error adding user contribution:", error)
+      throw new Error("Failed to add user contribution")
+    }
+  }
+
+  const getUserTotalContribution = async (projectId: string, userId: string): Promise<number> => {
+    const key = `${projectId}_${userId}`
+    return userContributions[key] || 0
+  }
+
+  const getProjectTotalContributions = async (projectId: string): Promise<number> => {
+    return Object.entries(userContributions)
+      .filter(([key]) => key.startsWith(`${projectId}_`))
+      .reduce((total, [, amount]) => total + amount, 0)
+  }
+
+  const getProjectCommitments = async (projectId: string): Promise<Commitment[]> => {
+    return projectCommitments[projectId] || []
+  }
+
   return (
     <DataContext.Provider
       value={{
@@ -1128,6 +1230,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         addUserPostComment,
         deleteUserPostComment,
         deleteUserProfile,
+        setProjectFundraisingGoal,
+        getProjectFundraisingGoal,
+        addUserContribution,
+        getUserTotalContribution,
+        getProjectTotalContributions,
+        getProjectCommitments,
       }}
     >
       {!state.isLoading && children}
