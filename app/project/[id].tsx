@@ -1,5 +1,7 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useEffect, useRef, useMemo } from "react"
 import {
   View,
@@ -17,7 +19,19 @@ import {
 } from "react-native"
 import { useLocalSearchParams, useRouter, Link } from "expo-router"
 import { BlurView } from "expo-blur"
-import { ArrowLeft, Heart, Send, ChevronDown, ChevronUp, Pencil, Check, Trash2, Plus, X } from "lucide-react-native"
+import {
+  ArrowLeft,
+  Heart,
+  Send,
+  ChevronDown,
+  ChevronUp,
+  Pencil,
+  Check,
+  Trash2,
+  Plus,
+  X,
+  Paperclip,
+} from "lucide-react-native"
 import { useFonts, BebasNeue_400Regular } from "@expo-google-fonts/bebas-neue"
 import Collapsible from "react-native-collapsible"
 import FundraisingComponent from "../../components/FundraisingComponent"
@@ -81,7 +95,7 @@ export default function ProjectPage() {
   const project = useMemo(() => projects.find((p) => p.id === id), [projects, id])
 
   const [isParticipant, setIsParticipant] = useState(false)
-  const [activeTab, setActiveTab] = useState("feed")
+  const [activeTab, setActiveTab] = useState("overview")
   const [newChat, setNewChat] = useState("")
   const [chats, setChats] = useState<Chat[]>([])
   const [isCollapsed, setIsCollapsed] = useState(true)
@@ -102,6 +116,7 @@ export default function ProjectPage() {
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false)
   const [postToDelete, setPostToDelete] = useState<string | null>(null)
   const [fundraisingGoal, setFundraisingGoal] = useState(() => project?.fundraisingGoal?.toString() || "")
+  const [uploadedFiles, setUploadedFiles] = useState<{ name: string; url: string; type: string }[]>([])
 
   const joinedUsers = useMemo(
     () => users.filter((user) => project?.collaborators.includes(user.id)),
@@ -179,7 +194,7 @@ export default function ProjectPage() {
         Alert.alert("Error", "Failed to send message. Please try again.")
       }
 
-      // Scroll to the bottom of the feed
+      // Scroll to the bottom of the main
       scrollViewRef.current?.scrollToEnd({ animated: true })
     }
   }
@@ -300,6 +315,37 @@ export default function ProjectPage() {
     router.back()
   }
 
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files
+    if (files) {
+      const newFiles = Array.from(files).map((file) => ({
+        name: file.name,
+        url: URL.createObjectURL(file),
+        type: file.type,
+      }))
+      setUploadedFiles((prevFiles) => [...prevFiles, ...newFiles])
+    }
+  }
+
+  const renderFilePreview = (file: { name: string; url: string; type: string }) => {
+    if (file.type.startsWith("audio/")) {
+      return (
+        <audio controls src={file.url}>
+          Your browser does not support the audio element.
+        </audio>
+      )
+    } else if (file.type.startsWith("video/")) {
+      return (
+        <video controls width="250">
+          <source src={file.url} type={file.type} />
+          Your browser does not support the video tag.
+        </video>
+      )
+    } else {
+      return <Text>{file.name}</Text>
+    }
+  }
+
   if (!project || !fontsLoaded) {
     return (
       <View style={styles.loadingContainer}>
@@ -315,7 +361,7 @@ export default function ProjectPage() {
         <Text style={styles.forumPostUsername}>Posted by: {item.username}</Text>
         <Text style={styles.forumPostTimestamp}>{new Date(item.timestamp).toLocaleString()}</Text>
         <Text style={styles.forumPostComments}>{item.comments?.length || 0} comments</Text>
-        {currentUser && (currentUser.id === item.userId || currentUser.id === project.creatorId) && (
+        {currentUser && currentUser.id === item.userId && (
           <TouchableOpacity style={styles.deleteForumButton} onPress={() => handleDeletePress(item.id)}>
             <Trash2 color={theme.colors.error} size={20} />
           </TouchableOpacity>
@@ -326,15 +372,51 @@ export default function ProjectPage() {
 
   const renderTabContent = () => {
     switch (activeTab) {
-      case "feed":
+      case "overview":
         return (
-          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.feedContainer}>
+          <View style={styles.overviewContainer}>
+            <Text style={styles.overviewHeader}>Overview</Text>
+            {isEditing ? (
+              <View>
+                <TextInput
+                  style={styles.editInput}
+                  value={editedProject.description}
+                  onChangeText={(value) => handleInputChange("description", value)}
+                  placeholder="Project Description"
+                  multiline
+                />
+                <TouchableOpacity
+                  style={styles.attachButton}
+                  onPress={() => document.getElementById("file-input")?.click()}
+                >
+                  <Paperclip color={theme.colors.primary} size={20} />
+                  <Text style={styles.attachButtonText}>Attach File</Text>
+                </TouchableOpacity>
+                <input type="file" id="file-input" style={{ display: "none" }} onChange={handleFileUpload} multiple />
+                {uploadedFiles.length > 0 && (
+                  <View style={styles.filesContainer}>
+                    {uploadedFiles.map((file, index) => (
+                      <View key={index} style={styles.fileItem}>
+                        {renderFilePreview(file)}
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            ) : (
+              <Text style={styles.description}>{project.description}</Text>
+            )}
+          </View>
+        )
+      case "main":
+        return (
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.mainContainer}>
             <FlatList
               ref={scrollViewRef}
               data={chats}
               renderItem={({ item }) => renderChatItem(item, users, project, currentUser, handleDeleteChat)}
               keyExtractor={(item) => item.id}
-              contentContainerStyle={styles.feedContent}
+              contentContainerStyle={styles.mainContent}
               ListEmptyComponent={<Text style={styles.emptyListText}>No chats yet. Start the conversation!</Text>}
             />
             <View style={styles.newChatContainer}>
@@ -455,22 +537,16 @@ export default function ProjectPage() {
             </Collapsible>
           </View>
         </View>
-        <Text style={styles.overviewHeader}>Overview</Text>
-        {isEditing ? (
-          <TextInput
-            style={styles.editInput}
-            value={editedProject.description}
-            onChangeText={(value) => handleInputChange("description", value)}
-            placeholder="Project Description"
-            multiline
-          />
-        ) : (
-          <Text style={styles.description}>{project.description}</Text>
-        )}
         <View style={styles.infoContainer}>
           <View style={styles.tabContainer}>
             <BlurView intensity={20} style={StyleSheet.absoluteFill} tint="dark" />
-            {["feed", "forum", "fundraising"].map((tab) => (
+            <View
+              style={[
+                styles.activeTabIndicator,
+                { top: `${["overview", "main", "forum", "fundraising"].indexOf(activeTab) * 25}%` },
+              ]}
+            />
+            {["overview", "main", "forum", "fundraising"].map((tab) => (
               <TouchableOpacity
                 key={tab}
                 style={[styles.tab, activeTab === tab && styles.activeTab]}
@@ -597,9 +673,8 @@ const styles = StyleSheet.create({
   },
   infoContainer: {
     marginBottom: 16,
-    padding: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
-    borderRadius: 8,
+    flexDirection: "row",
+    alignItems: "flex-start",
   },
   infoText: {
     fontSize: 14,
@@ -648,33 +723,43 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   tabContainer: {
-    flexDirection: "row",
-    justifyContent: "space-around",
+    flexDirection: "column",
+    justifyContent: "flex-start",
+    alignItems: "flex-start",
     marginBottom: 20,
     borderRadius: 25,
     overflow: "hidden",
     backgroundColor: "rgba(255, 255, 255, 0.1)",
+    width: 135,
   },
   tab: {
-    paddingVertical: 10,
+    paddingVertical: 15,
     paddingHorizontal: 20,
-    borderRadius: 0,
+    width: "100%",
   },
   activeTab: {
     backgroundColor: "rgba(255, 255, 255, 0.2)",
+  },
+  activeTabIndicator: {
+    position: "absolute",
+    left: 0,
+    width: 3,
+    height: "25%",
+    backgroundColor: theme.colors.primary,
   },
   tabText: {
     color: theme.colors.primary,
     fontSize: 16,
     fontWeight: "600",
+    textAlign: "left",
   },
   activeTabText: {
     color: theme.colors.primary,
   },
-  feedContainer: {
+  mainContainer: {
     flex: 1,
   },
-  feedContent: {
+  mainContent: {
     padding: 16,
   },
   chatItem: {
@@ -930,7 +1015,8 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   tabContentContainer: {
-    marginHorizontal: 20,
+    flex: 1,
+    marginLeft: 20,
     borderRadius: 25,
     overflow: "hidden",
   },
@@ -958,6 +1044,30 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: theme.colors.text,
     marginBottom: 16,
+  },
+  overviewContainer: {
+    padding: 16,
+  },
+  attachButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    padding: 8,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  attachButtonText: {
+    color: theme.colors.primary,
+    marginLeft: 8,
+  },
+  filesContainer: {
+    marginTop: 16,
+  },
+  fileItem: {
+    marginBottom: 8,
+    padding: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderRadius: 8,
   },
 })
 
