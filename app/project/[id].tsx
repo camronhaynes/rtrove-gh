@@ -9,7 +9,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  ActivityIndicator,
   TextInput,
   FlatList,
   KeyboardAvoidingView,
@@ -118,6 +117,7 @@ export default function ProjectPage() {
   const [fundraisingGoal, setFundraisingGoal] = useState(() => project?.fundraisingGoal?.toString() || "")
   const [uploadedFiles, setUploadedFiles] = useState<{ name: string; url: string; type: string }[]>([])
   const [externalFiles, setExternalFiles] = useState<{ name: string; url: string; type: string }[]>([])
+  const [fileDescriptions, setFileDescriptions] = useState<Record<string, { header: string; body: string }>>({})
 
   const joinedUsers = useMemo(
     () => users.filter((user) => project?.collaborators.includes(user.id)),
@@ -130,6 +130,12 @@ export default function ProjectPage() {
         setEditedProject(project)
         setIsParticipant(project.collaborators.includes(currentUser?.id || ""))
         setExternalFiles(project.files || [])
+
+        // Load file descriptions from local storage
+        const storedDescriptions = localStorage.getItem(`fileDescriptions_${project.id}`)
+        if (storedDescriptions) {
+          setFileDescriptions(JSON.parse(storedDescriptions))
+        }
       }
       const fetchedChats = await getProjectChats(id as string)
       setChats(fetchedChats)
@@ -339,6 +345,16 @@ export default function ProjectPage() {
         type: file.type,
       }))
       setUploadedFiles((prevFiles) => [...prevFiles, ...newFiles])
+
+      // Initialize descriptions for new files
+      const newDescriptions = { ...fileDescriptions }
+      newFiles.forEach((file) => {
+        if (!newDescriptions[file.url]) {
+          newDescriptions[file.url] = { header: "", body: "" }
+        }
+      })
+      setFileDescriptions(newDescriptions)
+      saveFileDescriptions(newDescriptions)
     }
   }
 
@@ -350,10 +366,37 @@ export default function ProjectPage() {
         ...prev,
         files: updatedFiles,
       }))
+
+      // Remove description for deleted file
+      const updatedDescriptions = { ...fileDescriptions }
+      delete updatedDescriptions[fileToDelete.url]
+      setFileDescriptions(updatedDescriptions)
+      saveFileDescriptions(updatedDescriptions)
     } catch (error) {
       console.error("Error deleting file:", error)
       Alert.alert("Error", "Failed to delete file. Please try again.")
     }
+  }
+
+  const handleDescriptionChange = (fileUrl: string, field: "header" | "body", value: string) => {
+    setFileDescriptions((prev) => ({
+      ...prev,
+      [fileUrl]: {
+        ...prev[fileUrl],
+        [field]: value,
+      },
+    }))
+  }
+
+  const saveFileDescriptions = (descriptions: Record<string, { header: string; body: string }>) => {
+    if (project) {
+      localStorage.setItem(`fileDescriptions_${project.id}`, JSON.stringify(descriptions))
+    }
+  }
+
+  const handleSaveDescriptions = () => {
+    saveFileDescriptions(fileDescriptions)
+    Alert.alert("Success", "File descriptions saved successfully")
   }
 
   const renderFilePreview = (file: { name: string; url: string; type: string }, isEditing: boolean) => {
@@ -374,24 +417,42 @@ export default function ProjectPage() {
       </View>
     )
 
-    if (isEditing) {
-      return (
-        <View style={styles.fileItemWithDelete}>
-          {filePreview}
-          <TouchableOpacity onPress={() => handleDeleteFile(file)} style={styles.deleteFileButton}>
-            <Text style={styles.deleteFileButtonText}>Delete</Text>
-          </TouchableOpacity>
-        </View>
-      )
-    }
-
-    return filePreview
-  }
-
-  if (!project || !fontsLoaded) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={theme.colors.primary} />
+      <View style={styles.fileItemContainer}>
+        <View style={styles.filePreviewContainer}>
+          {filePreview}
+          {isEditing && (
+            <TouchableOpacity onPress={() => handleDeleteFile(file)} style={styles.deleteFileButton}>
+              <Text style={styles.deleteFileButtonText}>Delete</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+        <View style={styles.fileDescriptionContainer}>
+          {isEditing ? (
+            <>
+              <TextInput
+                style={styles.fileDescriptionHeader}
+                value={fileDescriptions[file.url]?.header || ""}
+                onChangeText={(value) => handleDescriptionChange(file.url, "header", value)}
+                placeholder="File Title"
+                placeholderTextColor={theme.colors.textSecondary}
+              />
+              <TextInput
+                style={styles.fileDescriptionBody}
+                value={fileDescriptions[file.url]?.body || ""}
+                onChangeText={(value) => handleDescriptionChange(file.url, "body", value)}
+                placeholder="File Description"
+                placeholderTextColor={theme.colors.textSecondary}
+                multiline
+              />
+            </>
+          ) : (
+            <>
+              <Text style={styles.fileDescriptionHeaderText}>{fileDescriptions[file.url]?.header || "No title"}</Text>
+              <Text style={styles.fileDescriptionBodyText}>{fileDescriptions[file.url]?.body || "No description"}</Text>
+            </>
+          )}
+        </View>
       </View>
     )
   }
@@ -449,6 +510,9 @@ export default function ProjectPage() {
                     ))}
                   </View>
                 )}
+                <TouchableOpacity style={styles.saveDescriptionsButton} onPress={handleSaveDescriptions}>
+                  <Text style={styles.saveDescriptionsButtonText}>Save Descriptions</Text>
+                </TouchableOpacity>
               </View>
             ) : (
               <View>
@@ -470,6 +534,35 @@ export default function ProjectPage() {
       case "main":
         return (
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.mainContainer}>
+            {isEditing && currentUser && currentUser.id === project.creatorId && (
+              <TouchableOpacity
+                style={styles.attachButton}
+                onPress={() => document.getElementById("main-file-input")?.click()}
+              >
+                <Paperclip color={theme.colors.primary} size={20} />
+                <Text style={styles.attachButtonText}>Attach File</Text>
+              </TouchableOpacity>
+            )}
+            <input type="file" id="main-file-input" style={{ display: "none" }} onChange={handleFileUpload} multiple />
+            {(externalFiles.length > 0 || uploadedFiles.length > 0) && (
+              <View style={styles.filesContainer}>
+                {externalFiles.map((file, index) => (
+                  <View key={`external-${index}`} style={styles.fileItem}>
+                    {renderFilePreview(file, isEditing)}
+                  </View>
+                ))}
+                {uploadedFiles.map((file, index) => (
+                  <View key={`uploaded-${index}`} style={styles.fileItem}>
+                    {renderFilePreview(file, isEditing)}
+                  </View>
+                ))}
+              </View>
+            )}
+            {isEditing && (
+              <TouchableOpacity style={styles.saveDescriptionsButton} onPress={handleSaveDescriptions}>
+                <Text style={styles.saveDescriptionsButtonText}>Save Descriptions</Text>
+              </TouchableOpacity>
+            )}
             <FlatList
               ref={scrollViewRef}
               data={chats}
@@ -940,8 +1033,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: 'rgba(255, 255    alignItems: "center',
-    justifyContent: "space-between",
     backgroundColor: "rgba(255, 255, 255, 0.1)",
     padding: 12,
     borderRadius: 8,
@@ -1115,14 +1206,14 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 255, 255, 0.1)",
     padding: 8,
     borderRadius: 8,
-    marginTop: 8,
+    marginBottom: 8,
   },
   attachButtonText: {
     color: theme.colors.primary,
     marginLeft: 8,
   },
   filesContainer: {
-    marginTop: 16,
+    marginBottom: 16,
   },
   fileItem: {
     marginBottom: 8,
@@ -1153,6 +1244,61 @@ const styles = StyleSheet.create({
   },
   deleteFileButtonText: {
     color: theme.colors.error,
+    fontWeight: "bold",
+  },
+  fileItemContainer: {
+    marginBottom: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderRadius: 8,
+    overflow: "hidden",
+  },
+  filePreviewContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.1)",
+  },
+  fileDescriptionContainer: {
+    padding: 8,
+  },
+  fileDescriptionHeader: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: theme.colors.text,
+    marginBottom: 4,
+    padding: 4,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 4,
+  },
+  fileDescriptionBody: {
+    fontSize: 14,
+    color: theme.colors.text,
+    padding: 4,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 4,
+    minHeight: 60,
+  },
+  fileDescriptionHeaderText: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: theme.colors.text,
+    marginBottom: 4,
+  },
+  fileDescriptionBodyText: {
+    fontSize: 14,
+    color: theme.colors.text,
+  },
+  saveDescriptionsButton: {
+    backgroundColor: theme.colors.primary,
+    padding: 8,
+    borderRadius: 8,
+    alignItems: "center",
+    marginTop: 8,
+  },
+  saveDescriptionsButtonText: {
+    color: theme.colors.white,
     fontWeight: "bold",
   },
 })
