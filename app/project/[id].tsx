@@ -20,6 +20,7 @@ import { BlurView } from "expo-blur"
 import { ArrowLeft, Heart, Send, ChevronDown, ChevronUp, Pencil, Check, Trash2, Plus, X } from "lucide-react-native"
 import { useFonts, BebasNeue_400Regular } from "@expo-google-fonts/bebas-neue"
 import Collapsible from "react-native-collapsible"
+import FundraisingComponent from "../../components/FundraisingComponent"
 
 import { useData } from "../../context/DataContext"
 import { theme } from "../../src/styles/theme"
@@ -56,7 +57,7 @@ const renderChatItem = (
 }
 
 export default function ProjectPage() {
-  const { id, context } = useLocalSearchParams()
+  const { id } = useLocalSearchParams()
   const router = useRouter()
   const {
     currentUser,
@@ -76,6 +77,9 @@ export default function ProjectPage() {
     projects,
     updateProject,
   } = useData()
+
+  const project = useMemo(() => projects.find((p) => p.id === id), [projects, id])
+
   const [isParticipant, setIsParticipant] = useState(false)
   const [activeTab, setActiveTab] = useState("feed")
   const [newChat, setNewChat] = useState("")
@@ -97,8 +101,7 @@ export default function ProjectPage() {
   const [modalVisible, setModalVisible] = useState(false)
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false)
   const [postToDelete, setPostToDelete] = useState<string | null>(null)
-
-  const project = useMemo(() => projects.find((p) => p.id === id), [projects, id])
+  const [fundraisingGoal, setFundraisingGoal] = useState(() => project?.fundraisingGoal?.toString() || "")
 
   const joinedUsers = useMemo(
     () => users.filter((user) => project?.collaborators.includes(user.id)),
@@ -217,6 +220,20 @@ export default function ProjectPage() {
     setEditedProject((prev) => ({ ...prev, [key]: value }))
   }
 
+  const handleSaveFundraisingGoal = async () => {
+    if (project && currentUser && currentUser.id === project.creatorId) {
+      try {
+        const updatedProject = { ...project, fundraisingGoal: Number.parseFloat(fundraisingGoal) || 0 }
+        await editProject(project.id, { fundraisingGoal: Number.parseFloat(fundraisingGoal) || 0 })
+        updateProject(updatedProject)
+        Alert.alert("Success", "Fundraising goal updated successfully")
+      } catch (error) {
+        console.error("Error saving fundraising goal:", error)
+        Alert.alert("Error", "Failed to save fundraising goal. Please try again.")
+      }
+    }
+  }
+
   // Forum functions
   const handleCreatePost = async () => {
     if (newPostTitle.trim() && newPostContent.trim() && currentUser && project) {
@@ -277,19 +294,6 @@ export default function ProjectPage() {
         id: post.id,
       },
     })
-  }
-
-  const getBackButtonText = () => {
-    if (context && typeof context === "string") {
-      if (context.startsWith("folderView_")) {
-        return "Back to Folder View"
-      } else if (context === "allProjects") {
-        return "Back to All Projects"
-      } else if (context === "index") {
-        return "Back to Index"
-      }
-    }
-    return "Back"
   }
 
   const handleBackNavigation = () => {
@@ -372,8 +376,7 @@ export default function ProjectPage() {
       case "fundraising":
         return (
           <View style={styles.tabContent}>
-            <Text style={styles.tabTitle}>Fundraising</Text>
-            <Text style={styles.comingSoonText}>Fundraising feature coming soon!</Text>
+            <FundraisingComponent project={project} currentUser={currentUser} />
           </View>
         )
       default:
@@ -387,7 +390,7 @@ export default function ProjectPage() {
         <BlurView intensity={60} style={StyleSheet.absoluteFill} tint="dark" />
         <TouchableOpacity style={styles.backButton} onPress={handleBackNavigation}>
           <ArrowLeft color={theme.colors.primary} size={24} />
-          <Text style={styles.backButtonText}>{getBackButtonText()}</Text>
+          <Text style={styles.backButtonText}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.title}>{project.title}</Text>
         {currentUser && currentUser.id === project.creatorId && (
@@ -930,6 +933,31 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     borderRadius: 25,
     overflow: "hidden",
+  },
+  fundraisingGoalContainer: {
+    marginBottom: 16,
+  },
+  fundraisingGoalInput: {
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 8,
+    padding: 12,
+    color: theme.colors.text,
+    marginBottom: 8,
+  },
+  saveFundraisingGoalButton: {
+    backgroundColor: theme.colors.primary,
+    borderRadius: 8,
+    padding: 12,
+    alignItems: "center",
+  },
+  saveFundraisingGoalButtonText: {
+    color: theme.colors.white,
+    fontWeight: "bold",
+  },
+  fundraisingGoalText: {
+    fontSize: 18,
+    color: theme.colors.text,
+    marginBottom: 16,
   },
 })
 

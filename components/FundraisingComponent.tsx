@@ -1,328 +1,461 @@
-"use client"
-
 import type React from "react"
-import { useState, useMemo } from "react"
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, Alert } from "react-native"
-import { DollarSign, Edit2 } from "lucide-react-native"
-
-import { useData } from "../context/DataContext"
+import { useState, useEffect } from "react"
+import { Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList } from "react-native"
+import { X, Clock, Folder, User, Tag, MessageCircle, Check } from "lucide-react-native"
 import { theme } from "../src/styles/theme"
-import type { Project, User, Commitment } from "../src/utils/types"
+import { useData } from "../context/DataContext"
 
-interface FundraisingComponentProps {
-  project: Project
-  currentUser: User | null
+interface CreateFolderViewModalProps {
+  isVisible: boolean
+  onClose: () => void
+  onCreateFolder: (folderName: string, filters: FolderFilters) => void
 }
 
-const FundraisingComponent: React.FC<FundraisingComponentProps> = ({ project, currentUser }) => {
-  const { editProject, updateProject } = useData()
+interface FolderFilters {
+  timeRange: {
+    startDate: string
+    endDate: string
+  }
+  username: string[]
+  projectType: string[]
+  tags: string[]
+  includeProjects: boolean
+  includePosts: boolean
+}
 
-  const [isEditing, setIsEditing] = useState(false)
-  const [fundraisingGoal, setFundraisingGoal] = useState(project.fundraisingGoal?.toString() || "")
-  const [commitmentAmount, setCommitmentAmount] = useState("")
+interface UserData {
+  id: string
+  username: string
+}
 
-  const cumulativeCommitments = useMemo(() => {
-    const commitmentMap = new Map<string, number>()
-    project.commitments?.forEach((commitment) => {
-      const currentTotal = commitmentMap.get(commitment.userId) || 0
-      commitmentMap.set(commitment.userId, currentTotal + commitment.amount)
-    })
-    return Array.from(commitmentMap, ([userId, amount]) => ({
-      userId,
-      username: project.commitments?.find((c) => c.userId === userId)?.username || "Unknown User",
-      amount,
-    }))
-  }, [project.commitments])
+const PROJECT_TYPES = ["Live", "Community", "Songs", "Album", "Production", "Distribution", "Merch", "Collab"]
 
-  const totalCommitted = useMemo(
-    () => cumulativeCommitments.reduce((sum, commitment) => sum + commitment.amount, 0),
-    [cumulativeCommitments],
+const formatDate = (text: string) => {
+  const numbers = text.replace(/\D/g, "")
+  if (numbers.length <= 2) return numbers
+  if (numbers.length <= 4) return `${numbers.slice(0, 2)}/${numbers.slice(2)}`
+  return `${numbers.slice(0, 2)}/${numbers.slice(2, 4)}/${numbers.slice(4, 8)}`
+}
+
+const CustomCheckbox = ({ checked, onToggle, label }) => (
+  <TouchableOpacity style={styles.checkboxWrapper} onPress={onToggle}>
+    <View style={[styles.checkbox, checked && styles.checkboxChecked]}>
+      {checked && <Check size={16} color={theme.colors.background} />}
+    </View>
+    <Text style={styles.checkboxLabel}>{label}</Text>
+  </TouchableOpacity>
+)
+
+export const CreateFolderViewModal: React.FC<CreateFolderViewModalProps> = ({ isVisible, onClose, onCreateFolder }) => {
+  const { getAllUsers } = useData()
+  const [folderName, setFolderName] = useState("")
+  const [filters, setFilters] = useState<FolderFilters>({
+    timeRange: {
+      startDate: "",
+      endDate: "",
+    },
+    username: [],
+    projectType: [],
+    tags: [],
+    includeProjects: true,
+    includePosts: false,
+  })
+  const [users, setUsers] = useState<UserData[]>([])
+  const [filteredUsers, setFilteredUsers] = useState<UserData[]>([])
+  const [filteredProjectTypes, setFilteredProjectTypes] = useState<string[]>(PROJECT_TYPES)
+  const [isUsernameDropdownVisible, setIsUsernameDropdownVisible] = useState(false)
+  const [isProjectTypeDropdownVisible, setIsProjectTypeDropdownVisible] = useState(false)
+  const [usernameInputValue, setUsernameInputValue] = useState("")
+  const [projectTypeInputValue, setProjectTypeInputValue] = useState("")
+  const [tagsInputValue, setTagsInputValue] = useState("")
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      const allUsers = await getAllUsers()
+      const sortedUsers = allUsers.sort((a, b) => a.username.localeCompare(b.username))
+      setUsers(sortedUsers)
+      setFilteredUsers(sortedUsers)
+    }
+    fetchUsers()
+  }, [getAllUsers])
+
+  useEffect(() => {
+    setUsernameInputValue(filters.username.join(", "))
+  }, [filters.username])
+
+  useEffect(() => {
+    setProjectTypeInputValue(filters.projectType.join(", "))
+  }, [filters.projectType])
+
+  useEffect(() => {
+    setTagsInputValue(filters.tags.join(", "))
+  }, [filters.tags])
+
+  const handleCreateFolder = () => {
+    if (folderName.trim()) {
+      const newFilters = {
+        timeRange: filters.timeRange,
+        username: filters.username.length > 0 ? filters.username : [],
+        projectType: filters.projectType.length > 0 ? filters.projectType : [],
+        tags: filters.tags.length > 0 ? filters.tags : [],
+        includeProjects: filters.includeProjects,
+        includePosts: filters.includePosts,
+      }
+      onCreateFolder(folderName, newFilters)
+      setFolderName("")
+      setFilters({
+        timeRange: { startDate: "", endDate: "" },
+        username: [],
+        projectType: [],
+        tags: [],
+        includeProjects: true,
+        includePosts: false,
+      })
+      onClose()
+    }
+  }
+
+  const handleUsernameChange = (text: string) => {
+    setUsernameInputValue(text)
+    const usernames = text.split(",").map((item) => item.trim())
+    setFilters((prev) => ({ ...prev, username: usernames.filter(Boolean) }))
+    const lastUsername = usernames[usernames.length - 1]
+    const filtered = users.filter((user) => user.username.toLowerCase().startsWith(lastUsername.toLowerCase()))
+    setFilteredUsers(filtered)
+  }
+
+  const handleProjectTypeChange = (text: string) => {
+    setProjectTypeInputValue(text)
+    const types = text.split(",").map((item) => item.trim())
+    setFilters((prev) => ({ ...prev, projectType: types.filter(Boolean) }))
+    const lastType = types[types.length - 1]
+    const filtered = PROJECT_TYPES.filter((type) => type.toLowerCase().startsWith(lastType.toLowerCase()))
+    setFilteredProjectTypes(filtered)
+  }
+
+  const handleTagsChange = (text: string) => {
+    setTagsInputValue(text)
+    const tags = text.split(",").map((item) => item.trim())
+    setFilters((prev) => ({ ...prev, tags: tags.filter(Boolean) }))
+  }
+
+  const handleUsernameSelect = (username: string) => {
+    const newUsernames = [...filters.username, username]
+    const uniqueUsernames = Array.from(new Set(newUsernames))
+    setFilters((prev) => ({ ...prev, username: uniqueUsernames }))
+    setIsUsernameDropdownVisible(false)
+  }
+
+  const handleProjectTypeSelect = (projectType: string) => {
+    const newProjectTypes = [...filters.projectType, projectType]
+    const uniqueProjectTypes = Array.from(new Set(newProjectTypes))
+    setFilters((prev) => ({ ...prev, projectType: uniqueProjectTypes }))
+    setIsProjectTypeDropdownVisible(false)
+  }
+
+  const renderUserItem = ({ item }: { item: UserData }) => (
+    <TouchableOpacity style={styles.dropdownItem} onPress={() => handleUsernameSelect(item.username)}>
+      <Text style={styles.dropdownItemText}>{item.username}</Text>
+    </TouchableOpacity>
   )
 
-  const goalAmount = project.fundraisingGoal || 0
-  const remaining = Math.max(goalAmount - totalCommitted, 0)
-  const progress = goalAmount > 0 ? (totalCommitted / goalAmount) * 100 : 0
-
-  const handleSaveFundraisingGoal = async () => {
-    if (project && currentUser && currentUser.id === project.creatorId) {
-      try {
-        const newGoal = Number.parseFloat(fundraisingGoal) || 0
-        const updatedProject = { ...project, fundraisingGoal: newGoal }
-        await editProject(project.id, { fundraisingGoal: newGoal })
-        updateProject(updatedProject)
-        setIsEditing(false)
-        Alert.alert("Success", "Fundraising goal updated successfully")
-      } catch (error) {
-        console.error("Error saving fundraising goal:", error)
-        Alert.alert("Error", "Failed to save fundraising goal. Please try again.")
-      }
-    }
-  }
-
-  const handleCommitment = async () => {
-    if (!currentUser) {
-      Alert.alert("Error", "You must be logged in to make a commitment.")
-      return
-    }
-
-    const amount = Number.parseFloat(commitmentAmount)
-    if (isNaN(amount) || amount <= 0) {
-      Alert.alert("Error", "Please enter a valid commitment amount.")
-      return
-    }
-
-    try {
-      const newCommitment: Commitment = {
-        userId: currentUser.id,
-        username: currentUser.username,
-        amount: amount,
-        timestamp: Date.now(),
-      }
-
-      const updatedCommitments = project.commitments ? [...project.commitments, newCommitment] : [newCommitment]
-
-      const updatedProject = { ...project, commitments: updatedCommitments }
-      await editProject(project.id, { commitments: updatedCommitments })
-      updateProject(updatedProject)
-      setCommitmentAmount("")
-      Alert.alert("Success", "Your commitment has been recorded.")
-    } catch (error) {
-      console.error("Error saving commitment:", error)
-      Alert.alert("Error", "Failed to save commitment. Please try again.")
-    }
-  }
-
-  const renderCommitmentItem = ({ item }: { item: { userId: string; username: string; amount: number } }) => {
-    const percentage = (item.amount / totalCommitted) * 100
-    return (
-      <View style={styles.commitmentItem}>
-        <View style={styles.commitmentInfo}>
-          <Text style={styles.commitmentName}>{item.username}</Text>
-          <Text style={styles.commitmentPercentage}>{percentage.toFixed(1)}%</Text>
-        </View>
-        <Text style={styles.commitmentAmount}>${item.amount.toFixed(2)}</Text>
-      </View>
-    )
-  }
+  const renderProjectTypeItem = ({ item }: { item: string }) => (
+    <TouchableOpacity style={styles.dropdownItem} onPress={() => handleProjectTypeSelect(item)}>
+      <Text style={styles.dropdownItemText}>{item}</Text>
+    </TouchableOpacity>
+  )
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.sectionTitle}>Fundraising</Text>
-      <View style={styles.goalContainer}>
-        {isEditing ? (
-          <>
-            <TextInput
-              style={styles.input}
-              value={fundraisingGoal}
-              onChangeText={setFundraisingGoal}
-              placeholder="Set fundraising goal (in dollars)"
-              keyboardType="numeric"
-              placeholderTextColor={theme.colors.textSecondary}
-            />
-            <TouchableOpacity style={styles.button} onPress={handleSaveFundraisingGoal}>
-              <Text style={styles.buttonText}>Save Goal</Text>
+    <Modal visible={isVisible} animationType="slide" transparent>
+      <View style={styles.modalContainer}>
+        <View style={styles.modalContent}>
+          <View style={styles.header}>
+            <Text style={styles.modalTitle}>Create Folder View</Text>
+            <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+              <X color={theme.colors.text} size={24} />
             </TouchableOpacity>
-          </>
-        ) : (
-          <View style={styles.goalDisplay}>
-            <Text style={styles.goalText}>Goal: ${goalAmount.toFixed(2)}</Text>
-            {currentUser && currentUser.id === project.creatorId && (
-              <TouchableOpacity style={styles.editButton} onPress={() => setIsEditing(true)}>
-                <Edit2 size={20} color={theme.colors.primary} />
-              </TouchableOpacity>
-            )}
           </View>
-        )}
-      </View>
-      <View style={styles.statusContainer}>
-        <Text style={styles.statusText}>
-          Committed: ${totalCommitted.toFixed(2)} / Remaining: ${remaining.toFixed(2)}
-        </Text>
-        <View style={styles.progressBarContainer}>
-          <View style={[styles.progressBar, { width: `${progress}%` }]} />
-        </View>
-      </View>
-      <View style={styles.commitmentContainer}>
-        <Text style={styles.commitmentTitle}>Make a Commitment</Text>
-        <View style={styles.commitmentInputContainer}>
+
           <TextInput
-            style={styles.commitmentInput}
-            value={commitmentAmount}
-            onChangeText={setCommitmentAmount}
-            placeholder="Enter amount"
-            keyboardType="numeric"
+            style={styles.input}
+            placeholder="Folder Name"
+            value={folderName}
+            onChangeText={setFolderName}
             placeholderTextColor={theme.colors.textSecondary}
           />
-          <TouchableOpacity style={styles.commitButton} onPress={handleCommitment}>
-            <DollarSign size={20} color={theme.colors.background} />
-            <Text style={styles.commitButtonText}>Commit</Text>
+
+          <View style={styles.filtersContainer}>
+            <View style={styles.filterRow}>
+              <View style={styles.iconContainer}>
+                <Clock color={theme.colors.primary} size={20} />
+              </View>
+              <View style={styles.timeRangeContainer}>
+                <TextInput
+                  style={styles.timeRangeInput}
+                  placeholder="Start Date (MM/DD/YYYY)"
+                  value={filters.timeRange.startDate}
+                  onChangeText={(text) =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      timeRange: {
+                        ...prev.timeRange,
+                        startDate: formatDate(text),
+                      },
+                    }))
+                  }
+                  placeholderTextColor={theme.colors.textSecondary}
+                />
+                <TextInput
+                  style={styles.timeRangeInput}
+                  placeholder="End Date (MM/DD/YYYY)"
+                  value={filters.timeRange.endDate}
+                  onChangeText={(text) =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      timeRange: {
+                        ...prev.timeRange,
+                        endDate: formatDate(text),
+                      },
+                    }))
+                  }
+                  placeholderTextColor={theme.colors.textSecondary}
+                />
+              </View>
+            </View>
+
+            <View style={styles.filterRow}>
+              <View style={styles.iconContainer}>
+                <Folder color={theme.colors.primary} size={20} />
+              </View>
+              <View style={styles.inputContainer}>
+                <TextInput
+                  style={styles.filterInput}
+                  placeholder="Project Type(s)"
+                  value={projectTypeInputValue}
+                  onChangeText={handleProjectTypeChange}
+                  onFocus={() => setIsProjectTypeDropdownVisible(true)}
+                  onBlur={() => setTimeout(() => setIsProjectTypeDropdownVisible(false), 200)}
+                  placeholderTextColor={theme.colors.textSecondary}
+                />
+                {isProjectTypeDropdownVisible && (
+                  <FlatList
+                    data={filteredProjectTypes}
+                    renderItem={renderProjectTypeItem}
+                    keyExtractor={(item) => item}
+                    style={styles.dropdown}
+                    keyboardShouldPersistTaps="handled"
+                  />
+                )}
+              </View>
+            </View>
+
+            <View style={styles.filterRow}>
+              <View style={styles.iconContainer}>
+                <User color={theme.colors.primary} size={20} />
+              </View>
+              <View style={styles.inputContainer}>
+                <TextInput
+                  style={styles.filterInput}
+                  placeholder="Username"
+                  value={usernameInputValue}
+                  onChangeText={handleUsernameChange}
+                  onFocus={() => setIsUsernameDropdownVisible(true)}
+                  onBlur={() => setTimeout(() => setIsUsernameDropdownVisible(false), 200)}
+                  placeholderTextColor={theme.colors.textSecondary}
+                />
+                {isUsernameDropdownVisible && (
+                  <FlatList
+                    data={filteredUsers}
+                    renderItem={renderUserItem}
+                    keyExtractor={(item) => item.id}
+                    style={styles.dropdown}
+                    keyboardShouldPersistTaps="handled"
+                  />
+                )}
+              </View>
+            </View>
+
+            <View style={styles.filterRow}>
+              <View style={styles.iconContainer}>
+                <Tag color={theme.colors.primary} size={20} />
+              </View>
+              <View style={styles.inputContainer}>
+                <TextInput
+                  style={styles.filterInput}
+                  placeholder="Tags"
+                  value={tagsInputValue}
+                  onChangeText={handleTagsChange}
+                  placeholderTextColor={theme.colors.textSecondary}
+                />
+              </View>
+            </View>
+
+            <View style={styles.filterRow}>
+              <View style={styles.iconContainer}>
+                <MessageCircle color={theme.colors.primary} size={20} />
+              </View>
+              <View style={styles.checkboxContainer}>
+                <CustomCheckbox
+                  checked={filters.includeProjects}
+                  onToggle={() => setFilters((prev) => ({ ...prev, includeProjects: !prev.includeProjects }))}
+                  label="Include Projects"
+                />
+                <CustomCheckbox
+                  checked={filters.includePosts}
+                  onToggle={() => setFilters((prev) => ({ ...prev, includePosts: !prev.includePosts }))}
+                  label="Include Posts"
+                />
+              </View>
+            </View>
+          </View>
+
+          <TouchableOpacity style={styles.createButton} onPress={handleCreateFolder}>
+            <Folder color={theme.colors.background} size={20} />
+            <Text style={styles.createButtonText}>Create Folder</Text>
           </TouchableOpacity>
         </View>
       </View>
-      <Text style={styles.commitmentsTitle}>Commitments</Text>
-      <FlatList
-        data={cumulativeCommitments}
-        renderItem={renderCommitmentItem}
-        keyExtractor={(item) => item.userId}
-        style={styles.commitmentsList}
-        ListEmptyComponent={<Text style={styles.emptyText}>No commitments yet.</Text>}
-      />
-    </View>
+    </Modal>
   )
 }
 
 const styles = StyleSheet.create({
-  container: {
-    marginTop: 16,
-    padding: 24,
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
-    borderRadius: 16,
-    width: "100%",
-  },
-  sectionTitle: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: theme.colors.text,
-    marginBottom: 24,
-  },
-  goalContainer: {
-    marginBottom: 24,
-    width: "100%",
-  },
-  goalDisplay: {
-    flexDirection: "row",
+  modalContainer: {
+    flex: 1,
+    justifyContent: "center",
     alignItems: "center",
-    justifyContent: "space-between",
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
   },
-  goalText: {
-    fontSize: 20,
-    color: theme.colors.text,
+  modalContent: {
+    backgroundColor: theme.colors.background,
+    borderRadius: 10,
+    padding: 20,
+    width: "90%",
+    maxHeight: "80%",
+  },
+  header: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 20,
+    position: "relative",
+  },
+  closeButton: {
+    position: "absolute",
+    right: 0,
+  },
+  modalTitle: {
+    fontSize: 24,
     fontWeight: "bold",
+    color: theme.colors.text,
+    textAlign: "center",
   },
   input: {
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderRadius: 8,
-    padding: 12,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 5,
+    padding: 10,
+    marginBottom: 15,
     color: theme.colors.text,
-    marginBottom: 8,
-    fontSize: 16,
+    height: 40,
   },
-  button: {
-    backgroundColor: theme.colors.primary,
-    borderRadius: 8,
-    padding: 12,
-    alignItems: "center",
+  filtersContainer: {
+    gap: 12,
   },
-  buttonText: {
-    color: theme.colors.background,
-    fontWeight: "bold",
-    fontSize: 16,
-  },
-  editButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-  },
-  statusContainer: {
-    marginBottom: 24,
-    width: "100%",
-    padding: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
-    borderRadius: 12,
-  },
-  statusText: {
-    color: theme.colors.text,
-    marginBottom: 8,
-    fontSize: 16,
-  },
-  progressBarContainer: {
-    height: 8,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderRadius: 4,
-    overflow: "hidden",
-  },
-  progressBar: {
-    height: "100%",
-    backgroundColor: theme.colors.primary,
-  },
-  commitmentContainer: {
-    marginBottom: 24,
-    width: "100%",
-  },
-  commitmentTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: theme.colors.text,
-    marginBottom: 12,
-  },
-  commitmentInputContainer: {
+  filterRow: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 10,
   },
-  commitmentInput: {
+  iconContainer: {
+    width: 20,
+    height: 40,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  filterInput: {
     flex: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderRadius: 8,
-    padding: 12,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 5,
+    padding: 10,
     color: theme.colors.text,
-    marginRight: 8,
-    fontSize: 16,
+    height: 40,
   },
-  commitButton: {
+  inputContainer: {
+    flex: 1,
+  },
+  timeRangeContainer: {
+    flex: 1,
+    flexDirection: "row",
+    gap: 10,
+  },
+  timeRangeInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 5,
+    padding: 10,
+    color: theme.colors.text,
+    height: 40,
+  },
+  createButton: {
     backgroundColor: theme.colors.primary,
-    borderRadius: 8,
-    padding: 12,
+    padding: 15,
+    borderRadius: 5,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    marginTop: 20,
   },
-  commitButtonText: {
+  createButtonText: {
     color: theme.colors.background,
+    fontSize: 16,
     fontWeight: "bold",
     marginLeft: 8,
-    fontSize: 16,
   },
-  commitmentsTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: theme.colors.text,
-    marginBottom: 12,
+  dropdown: {
+    maxHeight: 150,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 5,
+    marginTop: 5,
+    backgroundColor: theme.colors.background,
   },
-  commitmentsList: {
-    maxHeight: 200,
-  },
-  commitmentItem: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 12,
+  dropdownItem: {
+    padding: 10,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(255, 255, 255, 0.1)",
+    borderBottomColor: theme.colors.border,
   },
-  commitmentInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  commitmentName: {
+  dropdownItemText: {
     color: theme.colors.text,
-    fontSize: 16,
-    marginRight: 8,
-  },
-  commitmentPercentage: {
-    color: theme.colors.primary,
     fontSize: 14,
   },
-  commitmentAmount: {
-    color: theme.colors.primary,
-    fontWeight: "bold",
-    fontSize: 16,
+  checkboxContainer: {
+    flex: 1,
+    flexDirection: "row",
+    justifyContent: "flex-start",
+    gap: 20,
   },
-  emptyText: {
-    color: theme.colors.textSecondary,
-    textAlign: "center",
-    fontSize: 16,
-    marginTop: 12,
+  checkboxWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderWidth: 2,
+    borderColor: theme.colors.primary,
+    borderRadius: 4,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 8,
+  },
+  checkboxChecked: {
+    backgroundColor: theme.colors.primary,
+  },
+  checkboxLabel: {
+    color: theme.colors.text,
+    fontSize: 14,
   },
 })
-
-export default FundraisingComponent
-
