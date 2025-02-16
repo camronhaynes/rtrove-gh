@@ -788,7 +788,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const updatedProject = {
         ...existingProject,
         ...updatedProjectData,
-        files: [...(existingProject.files || []), ...(updatedProjectData.files || [])],
+        files: updatedProjectData.files || existingProject.files || [],
       }
 
       const updatedProjects = [...projects]

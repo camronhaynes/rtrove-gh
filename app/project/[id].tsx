@@ -220,7 +220,7 @@ export default function ProjectPage() {
     if (isEditing && project) {
       try {
         // Merge existing files with newly uploaded files
-        const updatedFiles = [...(project.files || []), ...uploadedFiles]
+        const updatedFiles = [...externalFiles, ...uploadedFiles]
 
         const updatedProject = {
           ...project,
@@ -228,9 +228,9 @@ export default function ProjectPage() {
           files: updatedFiles,
         }
 
-        const savedProject = await editProject(project.id, updatedProject)
-        updateProject(savedProject)
-        setExternalFiles(savedProject.files || [])
+        await editProject(project.id, updatedProject)
+        updateProject(updatedProject)
+        setExternalFiles(updatedFiles)
         setUploadedFiles([])
         setIsEditing(false)
       } catch (error) {
@@ -342,23 +342,50 @@ export default function ProjectPage() {
     }
   }
 
-  const renderFilePreview = (file: { name: string; url: string; type: string }) => {
-    if (file.type.startsWith("audio/")) {
-      return (
-        <audio controls src={file.url}>
-          Your browser does not support the audio element.
-        </audio>
-      )
-    } else if (file.type.startsWith("video/")) {
-      return (
-        <video controls width="250">
-          <source src={file.url} type={file.type} />
-          Your browser does not support the video tag.
-        </video>
-      )
-    } else {
-      return <Text>{file.name}</Text>
+  const handleDeleteFile = (fileToDelete: { name: string; url: string; type: string }) => {
+    try {
+      const updatedFiles = externalFiles.filter((file) => file.url !== fileToDelete.url)
+      setExternalFiles(updatedFiles)
+      setEditedProject((prev) => ({
+        ...prev,
+        files: updatedFiles,
+      }))
+    } catch (error) {
+      console.error("Error deleting file:", error)
+      Alert.alert("Error", "Failed to delete file. Please try again.")
     }
+  }
+
+  const renderFilePreview = (file: { name: string; url: string; type: string }, isEditing: boolean) => {
+    const filePreview = (
+      <View>
+        {file.type.startsWith("audio/") ? (
+          <audio controls src={file.url}>
+            Your browser does not support the audio element.
+          </audio>
+        ) : file.type.startsWith("video/") ? (
+          <video controls width="250">
+            <source src={file.url} type={file.type} />
+            Your browser does not support the video tag.
+          </video>
+        ) : (
+          <Text>{file.name}</Text>
+        )}
+      </View>
+    )
+
+    if (isEditing) {
+      return (
+        <View style={styles.fileItemWithDelete}>
+          {filePreview}
+          <TouchableOpacity onPress={() => handleDeleteFile(file)} style={styles.deleteFileButton}>
+            <Text style={styles.deleteFileButtonText}>Delete</Text>
+          </TouchableOpacity>
+        </View>
+      )
+    }
+
+    return filePreview
   }
 
   if (!project || !fontsLoaded) {
@@ -408,11 +435,16 @@ export default function ProjectPage() {
                   <Text style={styles.attachButtonText}>Attach File</Text>
                 </TouchableOpacity>
                 <input type="file" id="file-input" style={{ display: "none" }} onChange={handleFileUpload} multiple />
-                {uploadedFiles.length > 0 && (
+                {(externalFiles.length > 0 || uploadedFiles.length > 0) && (
                   <View style={styles.filesContainer}>
+                    {externalFiles.map((file, index) => (
+                      <View key={`external-${index}`} style={styles.fileItem}>
+                        {renderFilePreview(file, true)}
+                      </View>
+                    ))}
                     {uploadedFiles.map((file, index) => (
-                      <View key={index} style={styles.fileItem}>
-                        {renderFilePreview(file)}
+                      <View key={`uploaded-${index}`} style={styles.fileItem}>
+                        {renderFilePreview(file, true)}
                       </View>
                     ))}
                   </View>
@@ -426,7 +458,7 @@ export default function ProjectPage() {
                     <Text style={styles.filesHeader}>Attached Files:</Text>
                     {externalFiles.map((file, index) => (
                       <View key={index} style={styles.fileItem}>
-                        {renderFilePreview(file)}
+                        {renderFilePreview(file, false)}
                       </View>
                     ))}
                   </View>
@@ -908,6 +940,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    backgroundColor: 'rgba(255, 255    alignItems: "center',
+    justifyContent: "space-between",
     backgroundColor: "rgba(255, 255, 255, 0.1)",
     padding: 12,
     borderRadius: 8,
@@ -943,12 +977,6 @@ const styles = StyleSheet.create({
   forumContainer: {
     flex: 1,
     padding: 16,
-    marginBottom: 8,
-    paddingHorizontal: 16,
-  },
-  forumContainer: {
-    flex: 1,
-    padding: 16,
   },
   newPostButton: {
     marginBottom: 16,
@@ -971,11 +999,6 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   newPostButtonText: {
-    color: theme.colors.primary,
-    fontWeight: "bold",
-  },
-  forumContent: {
-    paddingBottom: 1,
     color: theme.colors.primary,
     fontWeight: "bold",
   },
@@ -1113,6 +1136,24 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
     marginTop: 16,
     marginBottom: 8,
+  },
+  fileItemWithDelete: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+    padding: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderRadius: 8,
+  },
+  deleteFileButton: {
+    padding: 8,
+    borderRadius: 4,
+    backgroundColor: "rgba(255, 0, 0, 0.1)",
+  },
+  deleteFileButtonText: {
+    color: theme.colors.error,
+    fontWeight: "bold",
   },
 })
 
