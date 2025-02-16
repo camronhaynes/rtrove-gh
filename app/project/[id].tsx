@@ -71,7 +71,7 @@ const renderChatItem = (
 }
 
 export default function ProjectPage() {
-  const { id } = useLocalSearchParams()
+  const { id, context } = useLocalSearchParams()
   const router = useRouter()
   const {
     currentUser,
@@ -312,7 +312,11 @@ export default function ProjectPage() {
   }
 
   const handleBackNavigation = () => {
-    router.back()
+    if (context === "allProjects") {
+      router.push("/creators")
+    } else {
+      router.push("/")
+    }
   }
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -938,6 +942,11 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   newPostButtonText: {
+    color: theme.colors.primary,
+    fontWeight: "bold",
+  },
+  forumContent: {
+    paddingBottom: 1,
     color: theme.colors.primary,
     fontWeight: "bold",
   },
