@@ -120,7 +120,7 @@ interface DataContextType extends AuthState {
   createFolderView: (folderView: FolderView) => Promise<void>
   deleteFolderView: (folderViewId: string) => Promise<void>
   updateFolderView: (folderView: FolderView) => Promise<void>
-  editProject: (projectId: string, updatedProjectData: Partial<Project>) => Promise<void>
+  editProject: (projectId: string, updatedProjectData: Partial<Project>) => Promise<Project>
   addChat: (projectId: string, userId: string, content: string) => Promise<void>
   deleteChat: (chatId: string) => Promise<void>
   getProjectChats: (projectId: string) => Promise<Chat[]>
@@ -777,16 +777,28 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }
 
-  const editProject = async (projectId: string, updatedProjectData: Partial<Project>) => {
+  const editProject = async (projectId: string, updatedProjectData: Partial<Project>): Promise<Project> => {
     try {
-      const updatedProjects = projects.map((project) =>
-        project.id === projectId ? { ...project, ...updatedProjectData } : project,
-      )
+      const projectIndex = projects.findIndex((p) => p.id === projectId)
+      if (projectIndex === -1) {
+        throw new Error("Project not found")
+      }
+
+      const existingProject = projects[projectIndex]
+      const updatedProject = {
+        ...existingProject,
+        ...updatedProjectData,
+        files: [...(existingProject.files || []), ...(updatedProjectData.files || [])],
+      }
+
+      const updatedProjects = [...projects]
+      updatedProjects[projectIndex] = updatedProject
+
       setProjects(updatedProjects)
       await AsyncStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(updatedProjects))
 
       // If the project creator is the current user, update their projects list
-      if (currentUser && updatedProjectData.creatorId === currentUser.id) {
+      if (currentUser && updatedProject.creatorId === currentUser.id) {
         const userProjects = (await AsyncStorage.getItem(`${STORAGE_KEYS.PROJECTS}_${currentUser.id}`)) || "[]"
         const parsedUserProjects = JSON.parse(userProjects)
         if (!parsedUserProjects.includes(projectId)) {
@@ -794,6 +806,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           await AsyncStorage.setItem(`${STORAGE_KEYS.PROJECTS}_${currentUser.id}`, JSON.stringify(updatedUserProjects))
         }
       }
+
+      return updatedProject
     } catch (error) {
       console.error("Error editing project:", error)
       throw new Error("Failed to edit project")

@@ -117,6 +117,7 @@ export default function ProjectPage() {
   const [postToDelete, setPostToDelete] = useState<string | null>(null)
   const [fundraisingGoal, setFundraisingGoal] = useState(() => project?.fundraisingGoal?.toString() || "")
   const [uploadedFiles, setUploadedFiles] = useState<{ name: string; url: string; type: string }[]>([])
+  const [externalFiles, setExternalFiles] = useState<{ name: string; url: string; type: string }[]>([])
 
   const joinedUsers = useMemo(
     () => users.filter((user) => project?.collaborators.includes(user.id)),
@@ -128,6 +129,7 @@ export default function ProjectPage() {
       if (project) {
         setEditedProject(project)
         setIsParticipant(project.collaborators.includes(currentUser?.id || ""))
+        setExternalFiles(project.files || [])
       }
       const fetchedChats = await getProjectChats(id as string)
       setChats(fetchedChats)
@@ -217,10 +219,19 @@ export default function ProjectPage() {
   const handleEditSave = async () => {
     if (isEditing && project) {
       try {
-        await editProject(project.id, editedProject)
-        const updatedProject = { ...project, ...editedProject }
-        // Update the project in the global state
-        updateProject(updatedProject)
+        // Merge existing files with newly uploaded files
+        const updatedFiles = [...(project.files || []), ...uploadedFiles]
+
+        const updatedProject = {
+          ...project,
+          ...editedProject,
+          files: updatedFiles,
+        }
+
+        const savedProject = await editProject(project.id, updatedProject)
+        updateProject(savedProject)
+        setExternalFiles(savedProject.files || [])
+        setUploadedFiles([])
         setIsEditing(false)
       } catch (error) {
         console.error("Error saving project:", error)
@@ -408,7 +419,19 @@ export default function ProjectPage() {
                 )}
               </View>
             ) : (
-              <Text style={styles.description}>{project.description}</Text>
+              <View>
+                <Text style={styles.description}>{project.description}</Text>
+                {externalFiles.length > 0 && (
+                  <View style={styles.filesContainer}>
+                    <Text style={styles.filesHeader}>Attached Files:</Text>
+                    {externalFiles.map((file, index) => (
+                      <View key={index} style={styles.fileItem}>
+                        {renderFilePreview(file)}
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
             )}
           </View>
         )
@@ -920,6 +943,12 @@ const styles = StyleSheet.create({
   forumContainer: {
     flex: 1,
     padding: 16,
+    marginBottom: 8,
+    paddingHorizontal: 16,
+  },
+  forumContainer: {
+    flex: 1,
+    padding: 16,
   },
   newPostButton: {
     marginBottom: 16,
@@ -1077,6 +1106,13 @@ const styles = StyleSheet.create({
     padding: 8,
     backgroundColor: "rgba(255, 255, 255, 0.05)",
     borderRadius: 8,
+  },
+  filesHeader: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: theme.colors.text,
+    marginTop: 16,
+    marginBottom: 8,
   },
 })
 
