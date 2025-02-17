@@ -1,18 +1,41 @@
 "use client"
 
-import React, { useState, useEffect, useCallback } from "react"
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, FlatList, Image, SectionList } from "react-native"
+import { useState, useEffect, useCallback } from "react"
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  FlatList,
+  Image,
+  SectionList,
+  Modal,
+  TextInput,
+} from "react-native"
 import { useData } from "../../context/DataContext"
 import { theme } from "../../src/styles/theme"
 import { BlurView } from "expo-blur"
-import { Heart, Folder, Plus, Clock, Trash2, ChevronDown, ChevronUp, Tag, MessageCircle } from "lucide-react-native"
+import {
+  Heart,
+  Folder,
+  Plus,
+  Clock,
+  Trash2,
+  ChevronDown,
+  ChevronUp,
+  Tag,
+  MessageCircle,
+  Users,
+  PenSquare,
+  X,
+} from "lucide-react-native"
 import { useRouter, useLocalSearchParams } from "expo-router"
-import AsyncStorage from "@react-native-async-storage/async-storage"
 import { CreateFolderViewModal } from "../../components/CreateFolderViewModal"
 import { ConfirmationDialog } from "../../components/ConfirmationDialog"
 
 type TabType = "feed" | "trovebook"
-type FeedViewType = "folders" | "allProjects" | "allPosts" | "customFolder"
+type FeedViewType = "folders" | "allProjects" | "allPosts" | "following" | "customFolder"
 
 interface FolderView {
   id: string
@@ -71,24 +94,32 @@ export default function Index() {
     projects,
     likeProject,
     unlikeProject,
+    createFolderView,
     deleteFolderView,
-    folderViews,
-    setFolderViews,
+    updateFolderView,
+    getUserFolderViews,
     getUserPosts,
+    users,
+    addPost,
   } = useData()
   const [activeTab, setActiveTab] = useState<TabType>("feed")
   const [feedView, setFeedView] = useState<FeedViewType>("folders")
   const [createdUsers, setCreatedUsers] = useState([])
   const [isModalVisible, setIsModalVisible] = useState(false)
+  const [isAddPostModalVisible, setIsAddPostModalVisible] = useState(false)
+  const [newPostSubject, setNewPostSubject] = useState("")
+  const [newPostContent, setNewPostContent] = useState("")
   const [activeFolderView, setActiveFolderView] = useState<FolderView | null>(null)
   const [isConfirmationDialogVisible, setIsConfirmationDialogVisible] = useState(false)
   const [folderViewToDelete, setFolderViewToDelete] = useState<string | null>(null)
   const router = useRouter()
   const { context } = useLocalSearchParams()
 
-  const [folderViewsState, setFolderViewsState] = useState<FolderView[]>([])
+  const [folderViews, setFolderViews] = useState<FolderView[]>([])
   const [filteredContent, setFilteredContent] = useState<Array<any>>([])
   const [allPosts, setAllPosts] = useState<Array<any>>([])
+  const [followingContent, setFollowingContent] = useState<Array<any>>([])
+  const [isLoading, setIsLoading] = useState(true)
 
   const filterContent = useCallback(
     async (filters: FolderView["filters"]) => {
@@ -178,36 +209,30 @@ export default function Index() {
   )
 
   useEffect(() => {
-    const loadUsers = async () => {
-      const users = await getCreatedUsers()
-      setCreatedUsers(users)
-    }
-    loadUsers()
-    loadFolderViews()
-  }, [getCreatedUsers])
+    const loadInitialData = async () => {
+      setIsLoading(true)
+      try {
+        const users = await getCreatedUsers()
+        setCreatedUsers(users)
 
-  useEffect(() => {
-    const loadAllPosts = async () => {
-      const userIds = createdUsers.map((user) => user.id)
-      const fetchedPosts = await Promise.all(userIds.map((userId) => getUserPosts(userId)))
-      const allFetchedPosts = fetchedPosts.flat().map((p) => ({ ...p, type: "post" }))
-      setAllPosts(allFetchedPosts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()))
-    }
-    loadAllPosts()
-  }, [createdUsers, getUserPosts])
-
-  useEffect(() => {
-    if (context && typeof context === "string") {
-      const [source, folderName] = context.split("_")
-      if (source === "folderView") {
-        const folder = folderViewsState.find((f) => f.name === folderName)
-        if (folder) {
-          setActiveFolderView(folder)
-          setFeedView("customFolder")
+        if (currentUser) {
+          const userFolderViews = await getUserFolderViews(currentUser.id)
+          setFolderViews(userFolderViews)
         }
+
+        const userIds = users.map((user) => user.id)
+        const fetchedPosts = await Promise.all(userIds.map((userId) => getUserPosts(userId)))
+        const allFetchedPosts = fetchedPosts.flat().map((p) => ({ ...p, type: "post" }))
+        setAllPosts(allFetchedPosts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()))
+      } catch (error) {
+        console.error("Error loading initial data:", error)
+      } finally {
+        setIsLoading(false)
       }
     }
-  }, [context, folderViewsState])
+
+    loadInitialData()
+  }, [getCreatedUsers, getUserFolderViews, getUserPosts, currentUser])
 
   useEffect(() => {
     const loadFilteredContent = async () => {
@@ -219,47 +244,85 @@ export default function Index() {
     loadFilteredContent()
   }, [feedView, activeFolderView, filterContent])
 
-  const loadFolderViews = useCallback(async () => {
-    try {
-      const storedFolderViews = await AsyncStorage.getItem("folderViews")
-      if (storedFolderViews) {
-        const parsedViews = JSON.parse(storedFolderViews)
-        setFolderViewsState(parsedViews)
-        return parsedViews
+  useEffect(() => {
+    if (context && typeof context === "string") {
+      const [source, folderName] = context.split("_")
+      if (source === "folderView") {
+        const folder = folderViews.find((f) => f.name === folderName)
+        if (folder) {
+          setActiveFolderView(folder)
+          setFeedView("customFolder")
+        }
       }
-    } catch (error) {
-      console.error("Error loading folder views:", error)
     }
-    return []
-  }, [])
+  }, [context, folderViews])
 
-  const saveFolderViews = useCallback(async (newFolderViews: FolderView[]) => {
-    try {
-      await AsyncStorage.setItem("folderViews", JSON.stringify(newFolderViews))
-    } catch (error) {
-      console.error("Error saving folder views:", error)
+  useEffect(() => {
+    const fetchFollowingContent = async () => {
+      if (currentUser) {
+        const followedUsers = currentUser.following
+        const followedProjects = projects.filter((project) => followedUsers.includes(project.creatorId))
+        const followedPosts = (await Promise.all(followedUsers.map((userId) => getUserPosts(userId)))).flat()
+
+        const combinedContent = [
+          ...followedProjects.map((p) => ({ ...p, type: "project" })),
+          ...followedPosts.map((p) => ({ ...p, type: "post" })),
+        ]
+
+        setFollowingContent(
+          combinedContent.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+        )
+      }
     }
-  }, [])
+
+    fetchFollowingContent()
+  }, [currentUser, projects, getUserPosts])
 
   const handleCreateFolder = useCallback(
     async (folderName: string, filters: FolderView["filters"]) => {
-      const newFolder: FolderView = {
-        id: Date.now().toString(),
-        name: folderName,
-        filters: {
-          ...filters,
-          username: Array.isArray(filters.username) ? filters.username : [filters.username],
-          projectType: Array.isArray(filters.projectType) ? filters.projectType : [filters.projectType],
-          tags: Array.isArray(filters.tags) ? filters.tags : [filters.tags],
-          includeProjects: filters.includeProjects,
-          includePosts: filters.includePosts,
-        },
+      if (!currentUser) {
+        console.error("No user logged in")
+        return
       }
-      const updatedFolderViews = [...folderViewsState, newFolder]
-      setFolderViewsState(updatedFolderViews)
-      await saveFolderViews(updatedFolderViews)
+
+      try {
+        const newFolder: Omit<FolderView, "id"> = {
+          name: folderName,
+          filters: {
+            ...filters,
+            username: Array.isArray(filters.username) ? filters.username : [filters.username],
+            projectType: Array.isArray(filters.projectType) ? filters.projectType : [filters.projectType],
+            tags: Array.isArray(filters.tags) ? filters.tags : [filters.tags],
+            includeProjects: filters.includeProjects,
+            includePosts: filters.includePosts,
+          },
+        }
+        await createFolderView(currentUser.id, newFolder)
+        const updatedFolderViews = await getUserFolderViews(currentUser.id)
+        setFolderViews(updatedFolderViews)
+      } catch (error) {
+        console.error("Error creating folder view:", error)
+      }
     },
-    [folderViewsState, saveFolderViews],
+    [currentUser, createFolderView, getUserFolderViews],
+  )
+
+  const handleDeleteFolderView = useCallback(
+    async (folderId: string) => {
+      if (!currentUser) {
+        console.error("No user logged in")
+        return
+      }
+
+      try {
+        await deleteFolderView(currentUser.id, folderId)
+        const updatedFolderViews = await getUserFolderViews(currentUser.id)
+        setFolderViews(updatedFolderViews)
+      } catch (error) {
+        console.error("Error deleting folder view:", error)
+      }
+    },
+    [currentUser, deleteFolderView, getUserFolderViews],
   )
 
   const handleLikeToggle = useCallback(
@@ -284,14 +347,26 @@ export default function Index() {
     [isAuthenticated, currentUser, projects, likeProject, unlikeProject],
   )
 
-  const handleDeleteFolderView = useCallback(
-    async (folderId: string) => {
-      const updatedFolderViews = folderViewsState.filter((folder) => folder.id !== folderId)
-      setFolderViewsState(updatedFolderViews)
-      await saveFolderViews(updatedFolderViews)
-    },
-    [folderViewsState, saveFolderViews],
-  )
+  const handleAddPost = async () => {
+    if (!currentUser || !newPostSubject.trim() || !newPostContent.trim()) {
+      return
+    }
+
+    try {
+      await addPost(currentUser.id, newPostContent, newPostSubject, "")
+      setNewPostSubject("")
+      setNewPostContent("")
+      setIsAddPostModalVisible(false)
+
+      // Refresh the posts
+      const userIds = createdUsers.map((user) => user.id)
+      const fetchedPosts = await Promise.all(userIds.map((userId) => getUserPosts(userId)))
+      const allFetchedPosts = fetchedPosts.flat().map((p) => ({ ...p, type: "post" }))
+      setAllPosts(allFetchedPosts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()))
+    } catch (error) {
+      console.error("Error adding post:", error)
+    }
+  }
 
   const renderUserItem = ({ item }) => (
     <TouchableOpacity style={styles.userItem} onPress={() => router.push(`/user/${item.id}`)}>
@@ -323,7 +398,9 @@ export default function Index() {
                     ? `folderView_${activeFolderView.name}`
                     : feedView === "allProjects"
                       ? "allProjects"
-                      : "index",
+                      : feedView === "following"
+                        ? "following"
+                        : "index",
                 },
               })
             }
@@ -387,13 +464,16 @@ export default function Index() {
             style={[styles.postItem, { backgroundColor: "rgba(142, 69, 133, 0.3)" }]}
             onPress={() =>
               router.push({
-                pathname: `/user/${item.userId}/post/${item.id}`,
+                pathname: `/user/posts/${item.id}`,
                 params: {
+                  userId: item.userId,
                   context: activeFolderView
                     ? `folderView_${activeFolderView.name}`
                     : feedView === "allPosts"
                       ? "allPosts"
-                      : "index",
+                      : feedView === "following"
+                        ? "following"
+                        : "index",
                 },
               })
             }
@@ -504,14 +584,33 @@ export default function Index() {
   }
 
   const renderFeedContent = () => {
+    if (isLoading) {
+      return <Text style={styles.loadingText}>Loading...</Text>
+    }
+
+    if (!isAuthenticated || !currentUser) {
+      return (
+        <View>
+          <Text style={styles.contentText}>Sign in to view your feed and Trove Book</Text>
+          <Text style={styles.subText}>Explore the world of digital art and music</Text>
+        </View>
+      )
+    }
+
     if (feedView === "folders") {
       return (
         <View>
-          <TouchableOpacity style={styles.createFolderButton} onPress={() => setIsModalVisible(true)}>
-            <Folder size={20} color={theme.colors.primary} />
-            <Plus size={20} color={theme.colors.primary} />
-            <Text style={styles.createFolderText}>Create folder view</Text>
-          </TouchableOpacity>
+          <View style={styles.actionButtonsContainer}>
+            <TouchableOpacity style={styles.addPostButton} onPress={() => setIsAddPostModalVisible(true)}>
+              <PenSquare size={20} color={theme.colors.primary} />
+              <Text style={styles.addPostText}>Add a Post</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.createFolderButton} onPress={() => setIsModalVisible(true)}>
+              <Folder size={20} color={theme.colors.primary} />
+              <Plus size={20} color={theme.colors.primary} />
+              <Text style={styles.createFolderText}>Create folder view</Text>
+            </TouchableOpacity>
+          </View>
           <View style={styles.folderGrid}>
             <TouchableOpacity style={styles.allProjectsButton} onPress={() => setFeedView("allProjects")}>
               <BlurView intensity={30} style={StyleSheet.absoluteFill} tint="dark" />
@@ -531,8 +630,41 @@ export default function Index() {
                 </View>
               </View>
             </TouchableOpacity>
-            {folderViewsState.map((folder) => (
-              <React.Fragment key={folder.id}>{renderFolderViewItem({ item: folder })}</React.Fragment>
+            <TouchableOpacity style={styles.followingButton} onPress={() => setFeedView("following")}>
+              <BlurView intensity={30} style={StyleSheet.absoluteFill} tint="dark" />
+              <View style={styles.followingContent}>
+                <View style={styles.followingHeader}>
+                  <Users size={24} color={theme.colors.primary} />
+                  <Text style={styles.followingText}>Following</Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+            {folderViews.map((folder) => (
+              <TouchableOpacity
+                key={folder.id}
+                style={styles.folderViewButton}
+                onPress={() => {
+                  setActiveFolderView(folder)
+                  setFeedView("customFolder")
+                }}
+              >
+                <BlurView intensity={30} style={StyleSheet.absoluteFill} tint="dark" />
+                <View style={styles.folderViewContent}>
+                  <View style={styles.folderViewHeader}>
+                    <Folder size={24} color={theme.colors.primary} />
+                    <Text style={styles.folderViewText}>{folder.name}</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.deleteButton}
+                    onPress={() => {
+                      setFolderViewToDelete(folder.id)
+                      setIsConfirmationDialogVisible(true)
+                    }}
+                  >
+                    <Trash2 size={20} color={theme.colors.error} />
+                  </TouchableOpacity>
+                </View>
+              </TouchableOpacity>
             ))}
           </View>
         </View>
@@ -568,6 +700,23 @@ export default function Index() {
             </TouchableOpacity>
           }
           ListEmptyComponent={<Text style={styles.emptyText}>No posts in your feed yet.</Text>}
+          stickySectionHeadersEnabled={false}
+        />
+      )
+    } else if (feedView === "following") {
+      const groupedFollowingContent = groupItemsByDate(followingContent)
+      return (
+        <SectionList
+          sections={groupedFollowingContent}
+          renderItem={renderContentItem}
+          renderSectionHeader={({ section: { date } }) => <DaySeparator date={date} />}
+          keyExtractor={(item) => `${item.type}_${item.id}`}
+          ListHeaderComponent={
+            <TouchableOpacity style={styles.backButton} onPress={() => setFeedView("folders")}>
+              <Text style={styles.backButtonText}>← Back to Folders</Text>
+            </TouchableOpacity>
+          }
+          ListEmptyComponent={<Text style={styles.emptyText}>No content from followed users yet.</Text>}
           stickySectionHeadersEnabled={false}
         />
       )
@@ -609,24 +758,17 @@ export default function Index() {
         </TouchableOpacity>
       </View>
       <View style={styles.content}>
-        {isAuthenticated ? (
-          activeTab === "feed" ? (
-            renderFeedContent()
-          ) : (
-            <View style={styles.rUsersBox}>
-              <Text style={styles.rUsersTitle}>R-Users</Text>
-              <FlatList
-                data={createdUsers}
-                renderItem={renderUserItem}
-                keyExtractor={(item) => item.id}
-                ListEmptyComponent={<Text style={styles.emptyText}>No created users found.</Text>}
-              />
-            </View>
-          )
+        {activeTab === "feed" ? (
+          renderFeedContent()
         ) : (
-          <View>
-            <Text style={styles.contentText}>Sign in to view your feed and Trove Book</Text>
-            <Text style={styles.subText}>Explore the world of digital art and music</Text>
+          <View style={styles.rUsersBox}>
+            <Text style={styles.rUsersTitle}>R-Users</Text>
+            <FlatList
+              data={createdUsers}
+              renderItem={renderUserItem}
+              keyExtractor={(item) => item.id}
+              ListEmptyComponent={<Text style={styles.emptyText}>No created users found.</Text>}
+            />
           </View>
         )}
       </View>
@@ -648,6 +790,40 @@ export default function Index() {
         title="Delete Folder View"
         message="Are you sure you want to delete this folder view?"
       />
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={isAddPostModalVisible}
+        onRequestClose={() => setIsAddPostModalVisible(false)}
+      >
+        <View style={styles.modalContainer}>
+          <BlurView intensity={80} style={StyleSheet.absoluteFill} tint="dark" />
+          <View style={styles.modalContent}>
+            <TouchableOpacity style={styles.closeButton} onPress={() => setIsAddPostModalVisible(false)}>
+              <X size={24} color={theme.colors.text} />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Add a New Post</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Subject"
+              placeholderTextColor={theme.colors.textSecondary}
+              value={newPostSubject}
+              onChangeText={setNewPostSubject}
+            />
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              placeholder="Content"
+              placeholderTextColor={theme.colors.textSecondary}
+              value={newPostContent}
+              onChangeText={setNewPostContent}
+              multiline
+            />
+            <TouchableOpacity style={styles.addButton} onPress={handleAddPost}>
+              <Text style={styles.addButtonText}>Add Post</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   )
 }
@@ -863,6 +1039,17 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     width: "48%",
   },
+  followingButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: theme.colors.surface,
+    borderRadius: 10,
+    padding: 20,
+    marginBottom: 20,
+    overflow: "hidden",
+    width: "48%",
+  },
   allProjectsText: {
     fontSize: 18,
     fontWeight: "bold",
@@ -875,6 +1062,12 @@ const styles = StyleSheet.create({
     color: theme.colors.primary,
     marginLeft: 10,
   },
+  followingText: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: theme.colors.primary,
+    marginLeft: 10,
+  },
   backButton: {
     marginBottom: 20,
   },
@@ -882,11 +1075,27 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: theme.colors.primary,
   },
+  actionButtonsContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 20,
+  },
+  addPostButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: theme.colors.surface,
+  },
+  addPostText: {
+    marginLeft: 8,
+    fontSize: 14,
+    fontWeight: "500",
+    color: theme.colors.primary,
+  },
   createFolderButton: {
     flexDirection: "row",
     alignItems: "center",
-    alignSelf: "flex-end",
-    marginBottom: 10,
     padding: 10,
     borderRadius: 8,
     backgroundColor: theme.colors.surface,
@@ -909,12 +1118,20 @@ const styles = StyleSheet.create({
   allPostsContent: {
     alignItems: "center",
   },
+  followingContent: {
+    alignItems: "center",
+  },
   allProjectsHeader: {
     flexDirection: "row",
     alignItems: "center",
     marginBottom: 4,
   },
   allPostsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  followingHeader: {
     flexDirection: "row",
     alignItems: "center",
     marginBottom: 4,
@@ -928,7 +1145,7 @@ const styles = StyleSheet.create({
   folderViewButton: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent: "center",
     backgroundColor: theme.colors.surface,
     borderRadius: 10,
     padding: 20,
@@ -937,17 +1154,17 @@ const styles = StyleSheet.create({
     width: "48%",
   },
   folderViewContent: {
+    flex: 1,
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "space-between",
-    width: "100%",
+    alignItems: "center",
   },
   folderViewHeader: {
     flexDirection: "row",
     alignItems: "center",
   },
   folderViewText: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "bold",
     color: theme.colors.primary,
     marginLeft: 10,
@@ -1049,5 +1266,57 @@ const styles = StyleSheet.create({
     marginHorizontal: 10,
     fontFamily: theme.fonts.regular,
   },
+  loadingText: {
+    textAlign: "center",
+    color: theme.colors.textSecondary,
+    fontSize: 16,
+    marginTop: 20,
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalContent: {
+    backgroundColor: theme.colors.background,
+    borderRadius: 10,
+    padding: 20,
+    width: "90%",
+    maxWidth: 400,
+  },
+  closeButton: {
+    alignSelf: "flex-end",
+    marginBottom: 10,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: theme.colors.text,
+    marginBottom: 20,
+    textAlign: "center",
+  },
+  input: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: 5,
+    padding: 10,
+    marginBottom: 10,
+    color: theme.colors.text,
+  },
+  textArea: {
+    height: 100,
+    textAlignVertical: "top",
+  },
+  addButton: {
+    backgroundColor: theme.colors.primary,
+    borderRadius: 5,
+    padding: 10,
+    alignItems: "center",
+  },
+  addButtonText: {
+    color: theme.colors.background,
+    fontWeight: "bold",
+  },
 })
+
+export default Index
 

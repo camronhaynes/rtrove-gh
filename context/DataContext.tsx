@@ -22,7 +22,6 @@ type User = {
   posts: string[]
 }
 
-// New types for forum posts and comments
 type ForumPost = {
   id: string
   projectId: string
@@ -70,9 +69,15 @@ interface FolderView {
   id: string
   name: string
   filters: {
-    timeRange: string
-    username: string
-    projectType: string
+    timeRange: {
+      startDate?: string
+      endDate?: string
+    }
+    username: string[]
+    projectType: string[]
+    tags: string[]
+    includeProjects: boolean
+    includePosts: boolean
   }
 }
 
@@ -117,14 +122,14 @@ interface DataContextType extends AuthState {
   getProjectById: (projectId: string) => Promise<Project | null>
   toggleProjectParticipation: (projectId: string, userId: string) => Promise<void>
   folderViews: FolderView[]
-  createFolderView: (folderView: FolderView) => Promise<void>
-  deleteFolderView: (folderViewId: string) => Promise<void>
-  updateFolderView: (folderView: FolderView) => Promise<void>
+  createFolderView: (userId: string, folderView: Omit<FolderView, "id">) => Promise<void>
+  deleteFolderView: (userId: string, folderViewId: string) => Promise<void>
+  updateFolderView: (userId: string, folderView: FolderView) => Promise<void>
+  getUserFolderViews: (userId: string) => Promise<FolderView[]>
   editProject: (projectId: string, updatedProjectData: Partial<Project>) => Promise<Project>
   addChat: (projectId: string, userId: string, content: string) => Promise<void>
   deleteChat: (chatId: string) => Promise<void>
   getProjectChats: (projectId: string) => Promise<Chat[]>
-  // New forum-related functions
   getForumPosts: (projectId: string) => Promise<ForumPost[]>
   addForumPost: (projectId: string, title: string, content: string, userId: string, username: string) => Promise<void>
   updateForumPost: (postId: string, updatedData: Partial<ForumPost>) => Promise<void>
@@ -260,9 +265,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const loadFolderViews = async () => {
     try {
-      const storedFolderViews = await AsyncStorage.getItem(STORAGE_KEYS.FOLDER_VIEWS)
-      if (storedFolderViews) {
-        setFolderViews(JSON.parse(storedFolderViews))
+      if (currentUser) {
+        const storedFolderViews = await AsyncStorage.getItem(`${STORAGE_KEYS.FOLDER_VIEWS}_${currentUser.id}`)
+        if (storedFolderViews) {
+          setFolderViews(JSON.parse(storedFolderViews))
+        }
       }
     } catch (error) {
       console.error("Error loading folder views:", error)
@@ -288,6 +295,27 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (error) {
       console.error("Error loading forum posts:", error)
+    }
+  }
+
+  const loadFundraisingData = async () => {
+    try {
+      const storedGoals = await AsyncStorage.getItem(STORAGE_KEYS.FUNDRAISING_GOALS)
+      if (storedGoals) {
+        setFundraisingGoals(JSON.parse(storedGoals))
+      }
+
+      const storedContributions = await AsyncStorage.getItem(STORAGE_KEYS.USER_CONTRIBUTIONS)
+      if (storedContributions) {
+        setUserContributions(JSON.parse(storedContributions))
+      }
+
+      const storedCommitments = await AsyncStorage.getItem(STORAGE_KEYS.PROJECT_COMMITMENTS)
+      if (storedCommitments) {
+        setProjectCommitments(JSON.parse(storedCommitments))
+      }
+    } catch (error) {
+      console.error("Error loading fundraising data:", error)
     }
   }
 
@@ -456,7 +484,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await AsyncStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(updatedUsers))
       setUsers(updatedUsers)
 
-      // Update currentUser if they're the follower
       if (currentUser?.id === followerId) {
         const updatedCurrentUser = updatedUsers.find((u) => u.id === followerId)
         if (updatedCurrentUser) {
@@ -491,7 +518,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await AsyncStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(updatedUsers))
       setUsers(updatedUsers)
 
-      // Update currentUser if they're the unfollower
       if (currentUser?.id === followerId) {
         const updatedCurrentUser = updatedUsers.find((u) => u.id === followerId)
         if (updatedCurrentUser) {
@@ -718,7 +744,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setProjects(updatedProjects)
       await AsyncStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(updatedProjects))
 
-      // Update user's projectsJoined count
       const updatedUsers = users.map((user) => {
         if (user.id === userId) {
           const projectsJoined = updatedProjects.filter((p) => p.collaborators.includes(userId)).length
@@ -742,38 +767,52 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }
 
-  const createFolderView = async (folderView: FolderView) => {
+  const createFolderView = async (userId: string, folderView: Omit<FolderView, "id">) => {
     try {
-      const updatedFolderViews = [...folderViews, folderView]
+      const newFolderView: FolderView = {
+        ...folderView,
+        id: Date.now().toString(),
+      }
+      const updatedFolderViews = [...folderViews, newFolderView]
       setFolderViews(updatedFolderViews)
-      await AsyncStorage.setItem(STORAGE_KEYS.FOLDER_VIEWS, JSON.stringify(updatedFolderViews))
+      await AsyncStorage.setItem(`${STORAGE_KEYS.FOLDER_VIEWS}_${userId}`, JSON.stringify(updatedFolderViews))
     } catch (error) {
       console.error("Error creating folder view:", error)
       throw new Error("Failed to create folder view")
     }
   }
 
-  const deleteFolderView = async (folderViewId: string) => {
+  const deleteFolderView = async (userId: string, folderViewId: string) => {
     try {
       const updatedFolderViews = folderViews.filter((view) => view.id !== folderViewId)
       setFolderViews(updatedFolderViews)
-      await AsyncStorage.setItem(STORAGE_KEYS.FOLDER_VIEWS, JSON.stringify(updatedFolderViews))
+      await AsyncStorage.setItem(`${STORAGE_KEYS.FOLDER_VIEWS}_${userId}`, JSON.stringify(updatedFolderViews))
     } catch (error) {
       console.error("Error deleting folder view:", error)
       throw new Error("Failed to delete folder view")
     }
   }
 
-  const updateFolderView = async (updatedFolderView: FolderView) => {
+  const updateFolderView = async (userId: string, updatedFolderView: FolderView) => {
     try {
       const updatedFolderViews = folderViews.map((view) =>
         view.id === updatedFolderView.id ? updatedFolderView : view,
       )
       setFolderViews(updatedFolderViews)
-      await AsyncStorage.setItem(STORAGE_KEYS.FOLDER_VIEWS, JSON.stringify(updatedFolderViews))
+      await AsyncStorage.setItem(`${STORAGE_KEYS.FOLDER_VIEWS}_${userId}`, JSON.stringify(updatedFolderViews))
     } catch (error) {
       console.error("Error updating folder view:", error)
       throw new Error("Failed to update folder view")
+    }
+  }
+
+  const getUserFolderViews = async (userId: string): Promise<FolderView[]> => {
+    try {
+      const storedFolderViews = await AsyncStorage.getItem(`${STORAGE_KEYS.FOLDER_VIEWS}_${userId}`)
+      return storedFolderViews ? JSON.parse(storedFolderViews) : []
+    } catch (error) {
+      console.error("Error getting user folder views:", error)
+      throw new Error("Failed to get user folder views")
     }
   }
 
@@ -797,7 +836,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setProjects(updatedProjects)
       await AsyncStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(updatedProjects))
 
-      // If the project creator is the current user, update their projects list
       if (currentUser && updatedProject.creatorId === currentUser.id) {
         const userProjects = (await AsyncStorage.getItem(`${STORAGE_KEYS.PROJECTS}_${currentUser.id}`)) || "[]"
         const parsedUserProjects = JSON.parse(userProjects)
@@ -852,7 +890,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }
 
-  // New forum-related functions
   const getForumPosts = async (projectId: string): Promise<ForumPost[]> => {
     try {
       return forumPosts.filter((post) => post.projectId === projectId)
@@ -1033,54 +1070,44 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const deleteUserProfile = async (userId: string) => {
     try {
-      // First, get all the user's data before deletion
       const userToDelete = users.find((user) => user.id === userId)
       if (!userToDelete) throw new Error("User not found")
 
-      // Update all other users' following/followers arrays
       const updatedUsers = users
-        .filter((user) => user.id !== userId) // Remove the deleted user
+        .filter((user) => user.id !== userId)
         .map((user) => ({
           ...user,
-          // Remove the deleted user from following arrays
           following: (user.following || []).filter((id) => id !== userId),
-          // Remove the deleted user from followers arrays
           followers: (user.followers || []).filter((id) => id !== userId),
         }))
 
-      // Update projects: remove user from collaborators and remove their created projects
       const updatedProjects = projects
-        .filter((project) => project.creatorId !== userId) // Remove user's created projects
+        .filter((project) => project.creatorId !== userId)
         .map((project) => ({
           ...project,
           collaborators: project.collaborators.filter((id) => id !== userId),
           likes: project.likes.filter((id) => id !== userId),
         }))
 
-      // Update posts: remove user's posts and their likes/comments from other posts
       const updatedPosts = posts
-        .filter((post) => post.userId !== userId) // Remove user's posts
+        .filter((post) => post.userId !== userId)
         .map((post) => ({
           ...post,
           likes: post.likes.filter((id) => id !== userId),
           comments: post.comments?.filter((comment) => comment.userId !== userId) || [],
         }))
 
-      // Save all updates
       await AsyncStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(updatedUsers))
       await AsyncStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(updatedProjects))
       await AsyncStorage.setItem(STORAGE_KEYS.POSTS, JSON.stringify(updatedPosts))
 
-      // Update state
       setUsers(updatedUsers)
       setProjects(updatedProjects)
       setPosts(updatedPosts)
 
-      // Clean up user's stored data
       await AsyncStorage.removeItem(`${STORAGE_KEYS.SAVED_PROJECTS}_${userId}`)
       await AsyncStorage.removeItem(`${STORAGE_KEYS.PROJECTS}_${userId}`)
 
-      // Handle current user logout if they're the one being deleted
       if (currentUser?.id === userId) {
         setCurrentUser(null)
         await AsyncStorage.removeItem(STORAGE_KEYS.CURRENT_USER)
@@ -1098,34 +1125,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }
 
-  const loadFundraisingData = async () => {
-    try {
-      const storedGoals = await AsyncStorage.getItem(STORAGE_KEYS.FUNDRAISING_GOALS)
-      if (storedGoals) {
-        setFundraisingGoals(JSON.parse(storedGoals))
-      }
-
-      const storedContributions = await AsyncStorage.getItem(STORAGE_KEYS.USER_CONTRIBUTIONS)
-      if (storedContributions) {
-        setUserContributions(JSON.parse(storedContributions))
-      }
-
-      const storedCommitments = await AsyncStorage.getItem(STORAGE_KEYS.PROJECT_COMMITMENTS)
-      if (storedCommitments) {
-        setProjectCommitments(JSON.parse(storedCommitments))
-      }
-    } catch (error) {
-      console.error("Error loading fundraising data:", error)
-    }
-  }
-
   const setProjectFundraisingGoal = async (projectId: string, goal: number) => {
     try {
       const updatedGoals = { ...fundraisingGoals, [projectId]: goal }
       setFundraisingGoals(updatedGoals)
       await AsyncStorage.setItem(STORAGE_KEYS.FUNDRAISING_GOALS, JSON.stringify(updatedGoals))
 
-      // Update the project in the local state
       setProjects((prevProjects) => prevProjects.map((p) => (p.id === projectId ? { ...p, fundraisingGoal: goal } : p)))
     } catch (error) {
       console.error("Error setting project fundraising goal:", error)
@@ -1157,7 +1162,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setProjectCommitments(updatedCommitments)
       await AsyncStorage.setItem(STORAGE_KEYS.PROJECT_COMMITMENTS, JSON.stringify(updatedCommitments))
 
-      // Update the project in the local state
       setProjects((prevProjects) =>
         prevProjects.map((p) => {
           if (p.id === projectId) {
@@ -1228,12 +1232,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         createFolderView,
         deleteFolderView,
         updateFolderView,
+        getUserFolderViews,
         editProject,
         addChat,
         deleteChat,
         getProjectChats,
         isLoading: state.isLoading,
-        // New forum-related functions
         getForumPosts,
         addForumPost,
         updateForumPost,
