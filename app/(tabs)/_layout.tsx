@@ -65,12 +65,12 @@ function TabLayoutContent() {
         <Tabs.Screen
           name="index"
           options={{
-            title: 'HOME',
+            title: 'my trove',
             tabBarIcon: ({ color }) => (
               <View style={styles.tabItemContainer}>
                 <View style={styles.tabContent}>
                   <Play size={14} color={color} style={styles.playIcon} />
-                  <Text style={[styles.tabText, { color }]}>HOME</Text>
+                  <Text style={[styles.tabText, { color }]}>my trove</Text>
                 </View>
               </View>
             ),
@@ -86,35 +86,12 @@ function TabLayoutContent() {
                 <View style={[styles.divider, styles.leftDivider]} />
                 <View style={styles.tabContent}>
                   <Play size={14} color={color} style={styles.playIcon} />
-                  <Text style={[styles.tabText, { color }]}>CREATORS</Text>
+                  <Text style={[styles.tabText, { color }]}>main</Text>
                 </View>
                 <View style={[styles.divider, styles.rightDivider]} />
               </View>
             ),
             tabBarLabel: () => null,
-          }}
-        />
-        <Tabs.Screen
-          name="rtx"
-          options={{
-            title: 'RTX',
-            tabBarIcon: ({ color }) => (
-              <View style={styles.tabItemContainer}>
-                <View style={styles.tabContent}>
-                  <Play size={14} color={color} style={styles.playIcon} />
-                  <Text style={[styles.tabText, { color }]}>RTX</Text>
-                </View>
-              </View>
-            ),
-            tabBarLabel: () => null,
-          }}
-          listeners={{
-            tabPress: (e) => {
-              if (!isAuthenticated) {
-                e.preventDefault();
-                router.push('/login');
-              }
-            },
           }}
         />
       </Tabs>
@@ -174,7 +151,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.background,
     borderTopWidth: 1,
     borderTopColor: 'rgba(196, 220, 229, 0.1)',
-    height: 49,
+    height: 80,
     position: 'absolute',
     bottom: 0,
     left: 0,
@@ -199,14 +176,14 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   tabText: {
-    fontSize: 12,
+    fontSize: 20,
     fontWeight: '600',
     letterSpacing: 0.5,
   },
   divider: {
     width: 1,
     height: 20,
-    backgroundColor: 'rgba(196, 220, 229, 0.1)',
+    backgroundColor: 'rgba(196, 882, 229, 0.1)',
     position: 'absolute',
   },
   leftDivider: {
