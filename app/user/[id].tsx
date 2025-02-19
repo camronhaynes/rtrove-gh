@@ -14,16 +14,47 @@ import {
   SectionList,
   Dimensions, // Import Dimensions
   Alert, // Import Alert
+  StyleSheet as RNStyleSheet, // Import StyleSheet
 } from "react-native"
 import { useLocalSearchParams, useRouter, Link } from "expo-router"
 import { BlurView } from "expo-blur"
-import { Pencil, ArrowLeft, Check, Camera, Plus, Heart, ChevronDown, ChevronUp } from "lucide-react-native"
+import { Pencil, ArrowLeft, Check, Camera, Plus, Heart, ChevronDown, ChevronUp, PlusCircle } from "lucide-react-native"
 import Collapsible from "react-native-collapsible"
 import { ConfirmationDialog } from "../../components/ConfirmationDialog"
 
 import { useData } from "../../context/DataContext"
 import { theme } from "../../src/styles/theme"
-import type { Project, User, Post } from "../../src/utils/types"
+import type { Project, Post } from "../../src/utils/types"
+
+const userTypes = [
+  "artist",
+  "producer",
+  "vocalist",
+  "guitarist",
+  "bassist",
+  "drummer",
+  "music videographer",
+  "graphic designer",
+  "DJ",
+  "session musician",
+]
+
+type User = {
+  id: string
+  name: string
+  username: string
+  avatar: string
+  artType: string
+  bio?: string
+  location?: string
+  createdAt: string
+  posts: string[]
+  followers: string[]
+  following: string[]
+  likedPosts: string[]
+  primaryUserType: string
+  secondaryUserType: string
+}
 
 const groupItemsByDateTime = (items: any[]) => {
   const grouped = items.reduce((acc, item) => {
@@ -77,6 +108,7 @@ const UserPage: React.FC = () => {
     unfollowUser,
     deleteUserProfile,
     getLikedProjects,
+    updateUserTypes,
   } = useData()
   const { width } = Dimensions.get("window") // Get screen width
 
@@ -120,6 +152,9 @@ const UserPage: React.FC = () => {
   const [likedProjects, setLikedProjects] = useState<Project[]>([])
   const [isLikedProjectsCollapsed, setIsLikedProjectsCollapsed] = useState(true)
 
+  const [customUserType, setCustomUserType] = useState("")
+  const [availableUserTypes, setAvailableUserTypes] = useState(userTypes)
+
   useEffect(() => {
     const foundUser = users.find((u) => u.id === id)
     if (foundUser) {
@@ -138,6 +173,11 @@ const UserPage: React.FC = () => {
       setIsFollowing(currentUser.following?.includes(userState.id) || false)
     }
   }, [currentUser, userState])
+
+  useEffect(() => {
+    if (userState) {
+    }
+  }, [userState])
 
   const fetchUserProjects = useCallback(async () => {
     if (userState) {
@@ -190,6 +230,7 @@ const UserPage: React.FC = () => {
         bio: editedBio,
         location: editedLocation,
       })
+      await updateUserTypes(userState.id, userState.primaryUserType, userState.secondaryUserType)
       setUserState({
         ...userState,
         name: editedName,
@@ -288,6 +329,85 @@ const UserPage: React.FC = () => {
       Alert.alert("Error", "Failed to delete account. Please try again.")
     }
   }
+
+  const handlePrimaryUserTypeSelect = (type: string) => {
+    if (type === userState?.secondaryUserType) {
+      updateUserTypes(userState.id, type, "")
+    } else {
+      updateUserTypes(userState.id, type, userState?.secondaryUserType || "")
+    }
+  }
+
+  const handleSecondaryUserTypeSelect = (type: string) => {
+    if (type === userState?.primaryUserType) {
+      updateUserTypes(userState.id, "", type)
+    } else {
+      updateUserTypes(userState.id, userState?.primaryUserType || "", type)
+    }
+  }
+
+  const handleAddCustomUserType = () => {
+    if (customUserType && !availableUserTypes.includes(customUserType)) {
+      setAvailableUserTypes([...availableUserTypes, customUserType])
+      setCustomUserType("")
+    }
+  }
+
+  const UserTypeSelection = () => (
+    <View style={styles.userTypeContainer}>
+      <Text style={styles.userTypeTitle}>Select User Types</Text>
+      <View style={styles.userTypeGrid}>
+        {availableUserTypes.map((type) => (
+          <TouchableOpacity
+            key={type}
+            style={[
+              styles.userTypeChip,
+              userState?.primaryUserType === type && styles.primaryUserType,
+              userState?.secondaryUserType === type && styles.secondaryUserType,
+            ]}
+            onPress={() => {
+              if (userState?.primaryUserType === type) {
+                handlePrimaryUserTypeSelect("")
+              } else if (userState?.secondaryUserType === type) {
+                handleSecondaryUserTypeSelect("")
+              } else if (!userState?.primaryUserType) {
+                handlePrimaryUserTypeSelect(type)
+              } else if (!userState?.secondaryUserType) {
+                handleSecondaryUserTypeSelect(type)
+              }
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={`Select ${type} as user type`}
+            accessibilityState={{
+              selected: userState?.primaryUserType === type || userState?.secondaryUserType === type,
+            }}
+          >
+            <Text
+              style={[
+                styles.userTypeText,
+                (userState?.primaryUserType === type || userState?.secondaryUserType === type) &&
+                  styles.selectedUserTypeText,
+              ]}
+            >
+              {type}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <View style={styles.customUserTypeContainer}>
+        <TextInput
+          style={styles.customUserTypeInput}
+          placeholder="Add custom user type"
+          placeholderTextColor={theme.colors.textSecondary}
+          value={customUserType}
+          onChangeText={setCustomUserType}
+        />
+        <TouchableOpacity style={styles.addCustomUserTypeButton} onPress={handleAddCustomUserType}>
+          <PlusCircle color={theme.colors.primary} size={24} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  )
 
   if (!userState) {
     return (
@@ -397,17 +517,17 @@ const UserPage: React.FC = () => {
     <ScrollView style={styles.container}>
       {/* Header section */}
       <View style={styles.header}>
-        <BlurView intensity={60} style={StyleSheet.absoluteFill} tint="dark" />
+        <BlurView intensity={60} style={RNStyleSheet.absoluteFill} tint="dark" />
         <Link href="/creators" asChild>
           <TouchableOpacity style={styles.backButton}>
-            <BlurView intensity={80} style={StyleSheet.absoluteFill} tint="dark" />
+            <BlurView intensity={80} style={RNStyleSheet.absoluteFill} tint="dark" />
             <ArrowLeft color={theme.colors.primary} size={24} />
             <Text style={styles.backButtonText}>Back to Creators</Text>
           </TouchableOpacity>
         </Link>
         {isCurrentUser && (
           <TouchableOpacity style={styles.editButton} onPress={() => setIsEditing(!isEditing)}>
-            <BlurView intensity={20} style={StyleSheet.absoluteFill} tint="dark" />
+            <BlurView intensity={20} style={RNStyleSheet.absoluteFill} tint="dark" />
             <View style={styles.editButtonContent}>
               {isEditing ? (
                 <Check color={theme.colors.primary} size={20} />
@@ -505,6 +625,7 @@ const UserPage: React.FC = () => {
               multiline
               numberOfLines={4}
             />
+            <UserTypeSelection />
             <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
               <Text style={styles.saveButtonText}>Save Changes</Text>
             </TouchableOpacity>
@@ -520,13 +641,25 @@ const UserPage: React.FC = () => {
             <Text style={styles.username}>@{userState.username}</Text>
             <Text style={styles.location}>{userState.location}</Text>
             <Text style={styles.artType}>{userState.artType}</Text>
+            <View style={styles.userTypesContainer}>
+              {userState.primaryUserType && (
+                <View style={[styles.userTypeChip, styles.primaryUserType]}>
+                  <Text style={styles.savedUserTypeText}>{userState.primaryUserType}</Text>
+                </View>
+              )}
+              {userState.secondaryUserType && (
+                <View style={[styles.userTypeChip, styles.secondaryUserType]}>
+                  <Text style={styles.savedUserTypeText}>{userState.secondaryUserType}</Text>
+                </View>
+              )}
+            </View>
           </View>
         )}
       </View>
 
       {/* Stats section */}
       <View style={styles.statsContainer}>
-        <BlurView intensity={40} style={StyleSheet.absoluteFill} tint="dark" />
+        <BlurView intensity={40} style={RNStyleSheet.absoluteFill} tint="dark" />
         <View style={styles.statItem}>
           <Text style={styles.statValue}>{userProjects.length}</Text>
           <Text style={styles.statLabel}>Projects</Text>
@@ -543,7 +676,7 @@ const UserPage: React.FC = () => {
 
       {/* Tab navigation */}
       <View style={styles.tabContainer}>
-        <BlurView intensity={20} style={StyleSheet.absoluteFill} tint="dark" />
+        <BlurView intensity={20} style={RNStyleSheet.absoluteFill} tint="dark" />
         {["about", "posts", "projects"].map((tab) => (
           <TouchableOpacity
             key={tab}
@@ -559,7 +692,7 @@ const UserPage: React.FC = () => {
 
       {/* Tab content */}
       <View style={styles.tabContentContainer}>
-        <BlurView intensity={20} style={StyleSheet.absoluteFill} tint="dark" />
+        <BlurView intensity={20} style={RNStyleSheet.absoluteFill} tint="dark" />
         {activeTab === "about" && (
           <View style={styles.bioContainer}>
             <Text style={styles.bioTitle}>About Me</Text>
@@ -961,15 +1094,6 @@ const styles = StyleSheet.create({
   },
   cancelButtonText: {
     color: theme.colors.error,
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 15,
-    flex: 1,
-    marginRight: 5,
-    alignItems: "center",
-  },
-  cancelButtonText: {
-    color: theme.colors.error,
     fontWeight: "bold",
   },
   profileInfo: {
@@ -1048,7 +1172,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   likeCircle: {
-    width: 28, // Corrected width declaration
+    width: 28,
     height: 28,
     borderRadius: 14,
     borderWidth: 1,
@@ -1244,6 +1368,70 @@ const styles = StyleSheet.create({
     top: 10,
     right: 10,
     zIndex: 1,
+  },
+  userTypeContainer: {
+    marginTop: 20,
+  },
+  userTypeTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: theme.colors.text,
+    marginBottom: 10,
+  },
+  userTypeGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  userTypeChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: theme.colors.background,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  primaryUserType: {
+    backgroundColor: "yellow",
+  },
+  secondaryUserType: {
+    backgroundColor: "purple",
+  },
+  userTypeText: {
+    color: theme.colors.primary, // Default color for editing state
+    fontSize: 14,
+  },
+  savedUserTypeText: {
+    color: "#000000",
+    fontSize: 14,
+    fontWeight: "bold",
+  },
+  customUserTypeContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 10,
+  },
+  customUserTypeInput: {
+    flex: 1,
+    backgroundColor: theme.colors.surface,
+    borderRadius: 8,
+    padding: 10,
+    color: theme.colors.text,
+    marginRight: 10,
+  },
+  addCustomUserTypeButton: {
+    padding: 5,
+  },
+  userType: {
+    fontSize: 16,
+    color: theme.colors.textSecondary,
+    marginTop: 5,
+  },
+  userTypesContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginTop: 5,
+    gap: 10,
   },
 })
 

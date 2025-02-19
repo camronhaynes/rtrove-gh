@@ -20,6 +20,8 @@ type User = {
   followers: string[]
   bio: string
   posts: string[]
+  primaryUserType: string
+  secondaryUserType: string
 }
 
 type ForumPost = {
@@ -52,7 +54,9 @@ type Post = {
   content: string
   subject: string
   createdAt: number
+  editedAt?: number
   likes: string[]
+  files?: { name: string; uri: string; type: string }[]
   comments?: {
     id: string
     postId: string
@@ -153,6 +157,9 @@ interface DataContextType extends AuthState {
   getUserTotalContribution: (projectId: string, userId: string) => Promise<number>
   getProjectTotalContributions: (projectId: string) => Promise<number>
   getProjectCommitments: (projectId: string) => Promise<Commitment[]>
+  editPost: (postId: string, content: string, files: { name: string; uri: string; type: string }[]) => Promise<void>
+  getPostById: (postId: string) => Promise<Post | null>
+  updateUserTypes: (userId: string, primaryType: string, secondaryType: string) => Promise<void>
 }
 
 const STORAGE_KEYS = {
@@ -358,6 +365,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         followers: [],
         bio: "",
         posts: [],
+        primaryUserType: "",
+        secondaryUserType: "",
       }
 
       const updatedUsers = [...users, newUser]
@@ -1192,6 +1201,45 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return projectCommitments[projectId] || []
   }
 
+  const editPost = async (postId: string, content: string, files: { name: string; uri: string; type: string }[]) => {
+    try {
+      const updatedPosts = posts.map((post) =>
+        post.id === postId
+          ? {
+              ...post,
+              content,
+              files,
+              editedAt: Date.now(),
+            }
+          : post,
+      )
+      setPosts(updatedPosts)
+      await AsyncStorage.setItem(STORAGE_KEYS.POSTS, JSON.stringify(updatedPosts))
+    } catch (error) {
+      console.error("Error editing post:", error)
+      throw new Error("Failed to edit post")
+    }
+  }
+
+  const getPostById = async (postId: string): Promise<Post | null> => {
+    try {
+      const post = posts.find((p) => p.id === postId)
+      return post || null
+    } catch (error) {
+      console.error("Error getting post by ID:", error)
+      throw new Error("Failed to get post")
+    }
+  }
+
+  const updateUserTypes = async (userId: string, primaryType: string, secondaryType: string) => {
+    try {
+      await updateUserProfile(userId, { primaryUserType: primaryType, secondaryUserType: secondaryType })
+    } catch (error) {
+      console.error("Error updating user types:", error)
+      throw new Error("Failed to update user types")
+    }
+  }
+
   return (
     <DataContext.Provider
       value={{
@@ -1254,6 +1302,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         getUserTotalContribution,
         getProjectTotalContributions,
         getProjectCommitments,
+        editPost,
+        getPostById,
+        updateUserTypes,
       }}
     >
       {!state.isLoading && children}

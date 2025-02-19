@@ -12,6 +12,9 @@ import {
   SectionList,
   Modal,
   TextInput,
+  SafeAreaView,
+  Platform,
+  StatusBar,
 } from "react-native"
 import { useData } from "../../context/DataContext"
 import { theme } from "../../src/styles/theme"
@@ -101,6 +104,8 @@ export default function Index() {
     getUserPosts,
     users,
     addPost,
+    likePost,
+    unlikePost,
   } = useData()
   const [activeTab, setActiveTab] = useState<TabType>("feed")
   const [feedView, setFeedView] = useState<FeedViewType>("folders")
@@ -368,21 +373,26 @@ export default function Index() {
     }
   }
 
-  const renderUserItem = ({ item }) => (
-    <TouchableOpacity style={styles.userItem} onPress={() => router.push(`/user/${item.id}`)}>
-      <View style={styles.userItemContent}>
-        <View style={styles.userInfo}>
-          <Text style={styles.userName}>{item.username}</Text>
-          <Text style={styles.userJoinDate}>Joined: {new Date(item.createdAt).toLocaleDateString()}</Text>
+  const renderUserItem = ({ item }) => {
+    if (!currentUser || !currentUser.following.includes(item.id)) {
+      return null
+    }
+    return (
+      <TouchableOpacity style={styles.userItem} onPress={() => router.push(`/user/${item.id}`)}>
+        <View style={styles.userItemContent}>
+          <View style={styles.userInfo}>
+            <Text style={styles.userName}>{item.username}</Text>
+            <Text style={styles.userJoinDate}>Joined: {new Date(item.createdAt).toLocaleDateString()}</Text>
+          </View>
+          <Image
+            source={{ uri: item.avatar || "https://picsum.photos/seed/default/200" }}
+            style={styles.userAvatar}
+            defaultSource={{ uri: "https://picsum.photos/seed/default/200" }}
+          />
         </View>
-        <Image
-          source={{ uri: item.avatar || "https://picsum.photos/seed/default/200" }}
-          style={styles.userAvatar}
-          defaultSource={{ uri: "https://picsum.photos/seed/default/200" }}
-        />
-      </View>
-    </TouchableOpacity>
-  )
+      </TouchableOpacity>
+    )
+  }
 
   const renderContentItem = useCallback(
     ({ item }) => {
@@ -456,7 +466,6 @@ export default function Index() {
           </TouchableOpacity>
         )
       } else if (item.type === "post") {
-        // Find the user from createdUsers array using the post's userId
         const postUser = createdUsers.find((user) => user.id === item.userId)
 
         return (
@@ -491,7 +500,31 @@ export default function Index() {
             </Text>
             <View style={styles.postFooter}>
               <View style={styles.postStats}>
-                <View style={styles.statItem}>
+                <TouchableOpacity
+                  onPress={() =>
+                    currentUser &&
+                    (item.likes.includes(currentUser.id)
+                      ? unlikePost(item.id, currentUser.id)
+                      : likePost(item.id, currentUser.id))
+                  }
+                  style={styles.likeButton}
+                >
+                  <View style={styles.likeCircle}>
+                    <Heart
+                      size={16}
+                      color={
+                        currentUser && item.likes.includes(currentUser.id)
+                          ? theme.colors.primary
+                          : theme.colors.textSecondary
+                      }
+                      fill={currentUser && item.likes.includes(currentUser.id) ? theme.colors.primary : "transparent"}
+                    />
+                  </View>
+                  <Text style={styles.likeCount}>{item.likes.length} likes</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.postMetadata}>
+                <View style={styles.commentCount}>
                   <MessageCircle size={16} color={theme.colors.textSecondary} />
                   <Text style={styles.statText}>{item.comments?.length || 0}</Text>
                 </View>
@@ -514,7 +547,7 @@ export default function Index() {
       }
       return null
     },
-    [router, handleLikeToggle, currentUser, activeFolderView, feedView, createdUsers],
+    [router, currentUser, activeFolderView, feedView, handleLikeToggle, likePost, unlikePost, createdUsers],
   )
 
   const renderFolderViewItem = ({ item }: { item: FolderView }) => (
@@ -742,93 +775,105 @@ export default function Index() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      <View style={styles.tabContainer}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === "feed" && styles.activeTab]}
-          onPress={() => setActiveTab("feed")}
-        >
-          <Text style={[styles.tabText, activeTab === "feed" && styles.activeTabText]}>Feed</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === "trovebook" && styles.activeTab]}
-          onPress={() => setActiveTab("trovebook")}
-        >
-          <Text style={[styles.tabText, activeTab === "trovebook" && styles.activeTabText]}>Trove Book</Text>
-        </TouchableOpacity>
-      </View>
-      <View style={styles.content}>
-        {activeTab === "feed" ? (
-          renderFeedContent()
-        ) : (
-          <View style={styles.rUsersBox}>
-            <Text style={styles.rUsersTitle}>R-Users</Text>
-            <FlatList
-              data={createdUsers}
-              renderItem={renderUserItem}
-              keyExtractor={(item) => item.id}
-              ListEmptyComponent={<Text style={styles.emptyText}>No created users found.</Text>}
-            />
-          </View>
-        )}
-      </View>
-      <CreateFolderViewModal
-        isVisible={isModalVisible}
-        onClose={() => setIsModalVisible(false)}
-        onCreateFolder={handleCreateFolder}
-      />
-      <ConfirmationDialog
-        isVisible={isConfirmationDialogVisible}
-        onClose={() => setIsConfirmationDialogVisible(false)}
-        onConfirm={() => {
-          if (folderViewToDelete) {
-            handleDeleteFolderView(folderViewToDelete)
-            setFolderViewToDelete(null)
-          }
-          setIsConfirmationDialogVisible(false)
-        }}
-        title="Delete Folder View"
-        message="Are you sure you want to delete this folder view?"
-      />
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={isAddPostModalVisible}
-        onRequestClose={() => setIsAddPostModalVisible(false)}
-      >
-        <View style={styles.modalContainer}>
-          <BlurView intensity={80} style={StyleSheet.absoluteFill} tint="dark" />
-          <View style={styles.modalContent}>
-            <TouchableOpacity style={styles.closeButton} onPress={() => setIsAddPostModalVisible(false)}>
-              <X size={24} color={theme.colors.text} />
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Add a New Post</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Subject"
-              placeholderTextColor={theme.colors.textSecondary}
-              value={newPostSubject}
-              onChangeText={setNewPostSubject}
-            />
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              placeholder="Content"
-              placeholderTextColor={theme.colors.textSecondary}
-              value={newPostContent}
-              onChangeText={setNewPostContent}
-              multiline
-            />
-            <TouchableOpacity style={styles.addButton} onPress={handleAddPost}>
-              <Text style={styles.addButtonText}>Add Post</Text>
-            </TouchableOpacity>
-          </View>
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+        <View style={styles.tabContainer}>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === "feed" && styles.activeTab]}
+            onPress={() => setActiveTab("feed")}
+          >
+            <Text style={[styles.tabText, activeTab === "feed" && styles.activeTabText]}>Feed</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === "trovebook" && styles.activeTab]}
+            onPress={() => setActiveTab("trovebook")}
+          >
+            <Text style={[styles.tabText, activeTab === "trovebook" && styles.activeTabText]}>Trove Book</Text>
+          </TouchableOpacity>
         </View>
-      </Modal>
-    </ScrollView>
+        <View style={styles.content}>
+          {activeTab === "trovebook" ? (
+            <View style={styles.rUsersBox}>
+              <Text style={styles.rUsersTitle}>Following</Text>
+              {currentUser ? (
+                <FlatList
+                  data={users.filter((user) => currentUser.following.includes(user.id))}
+                  renderItem={renderUserItem}
+                  keyExtractor={(item) => item.id}
+                  ListEmptyComponent={<Text style={styles.emptyText}>You are not following any users yet.</Text>}
+                />
+              ) : (
+                <Text style={styles.emptyText}>Please log in to see users you're following.</Text>
+              )}
+            </View>
+          ) : (
+            renderFeedContent()
+          )}
+        </View>
+        <CreateFolderViewModal
+          isVisible={isModalVisible}
+          onClose={() => setIsModalVisible(false)}
+          onCreateFolder={handleCreateFolder}
+        />
+        <ConfirmationDialog
+          isVisible={isConfirmationDialogVisible}
+          onClose={() => setIsConfirmationDialogVisible(false)}
+          onConfirm={() => {
+            if (folderViewToDelete) {
+              handleDeleteFolderView(folderViewToDelete)
+              setFolderViewToDelete(null)
+            }
+            setIsConfirmationDialogVisible(false)
+          }}
+          title="Delete Folder View"
+          message="Are you sure you want to delete this folder view?"
+        />
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={isAddPostModalVisible}
+          onRequestClose={() => setIsAddPostModalVisible(false)}
+        >
+          <View style={styles.modalContainer}>
+            <BlurView intensity={80} style={StyleSheet.absoluteFill} tint="dark" />
+            <View style={styles.modalContent}>
+              <TouchableOpacity style={styles.closeButton} onPress={() => setIsAddPostModalVisible(false)}>
+                <X size={24} color={theme.colors.text} />
+              </TouchableOpacity>
+              <Text style={styles.modalTitle}>Add a New Post</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Subject"
+                placeholderTextColor={theme.colors.textSecondary}
+                value={newPostSubject}
+                onChangeText={setNewPostSubject}
+              />
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                placeholder="Content"
+                placeholderTextColor={theme.colors.textSecondary}
+                value={newPostContent}
+                onChangeText={setNewPostContent}
+                multiline
+                textAlignVertical="top"
+              />
+              <TouchableOpacity style={styles.addButton} onPress={handleAddPost}>
+                <Text style={styles.addButtonText}>Add Post</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      </ScrollView>
+    </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
+  },
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
@@ -951,6 +996,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "flex-end",
+    alignItems: "center",
   },
   tag: {
     flexDirection: "row",
@@ -1211,30 +1257,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     marginBottom: 5,
   },
-  postCreator: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-    marginBottom: 5,
-  },
-  postContent: {
-    fontSize: 14,
-    color: theme.colors.text,
-    marginBottom: 10,
-  },
-  postFooter: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  postStats: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  statItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginRight: 10,
-  },
   postCreatorContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -1249,22 +1271,48 @@ const styles = StyleSheet.create({
     color: theme.colors.primary,
     textDecorationLine: "underline",
   },
-  daySeparatorContainer: {
+  postContent: {
+    fontSize: 14,
+    color: theme.colors.text,
+    marginBottom: 10,
+  },
+  postFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 10,
+  },
+  postStats: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 20,
-    paddingHorizontal: 10,
   },
-  daySeparatorLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: theme.colors.border,
+  postMetadata: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
   },
-  daySeparatorText: {
+  commentCount: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  likeButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  likeCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  likeCount: {
     color: theme.colors.textSecondary,
     fontSize: 14,
-    marginHorizontal: 10,
-    fontFamily: theme.fonts.regular,
   },
   loadingText: {
     textAlign: "center",

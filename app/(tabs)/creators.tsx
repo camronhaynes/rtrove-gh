@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useMemo } from "react"
+import { useState, useCallback, useMemo, useEffect } from "react"
 import {
   StyleSheet,
   View,
@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Modal,
   SectionList,
+  Image,
 } from "react-native"
 import { useRouter } from "expo-router"
 import { Search, Plus, Trash2, Clock, Tag } from "lucide-react-native"
@@ -23,14 +24,16 @@ import { ConfirmationDialog } from "../../components/ConfirmationDialog"
 
 const PROJECT_TYPES = [
   "All",
-  "Live",
-  "Community",
-  "Songs",
-  "Album",
-  "Production",
-  "Distribution",
+  "Collab Page",
+  "Single / EP",
+  "Album / LP",
+  "Event",
+  "Show / Live",
+  "Studio",
   "Merch",
-  "Collab",
+  "Video",
+  "Graphics / Visuals",
+  "Distro / Promo",
 ] as const
 
 const groupItemsByDate = (items: any[]) => {
@@ -57,13 +60,42 @@ const groupItemsByDate = (items: any[]) => {
 }
 
 export default function CreatorsScreen() {
-  const { projects, isAuthenticated, isLoading, currentUser, deleteProject } = useData()
+  const { projects, isAuthenticated, isLoading, currentUser, deleteProject, users } = useData()
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedType, setSelectedType] = useState<string | null>(null)
   const [showAddProjectForm, setShowAddProjectForm] = useState(false)
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false)
   const [projectToDelete, setProjectToDelete] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<"projects" | "allTrove">("projects")
+  const [selectedUserType, setSelectedUserType] = useState<string | null>("All")
+  const [filteredUsers, setFilteredUsers] = useState(users)
+  const [dynamicUserTypes, setDynamicUserTypes] = useState<string[]>(["All"])
   const router = useRouter()
+
+  useEffect(() => {
+    const getAllUserTypes = () => {
+      const userTypes = new Set<string>(["All"])
+      users.forEach((user) => {
+        if (user.primaryUserType) userTypes.add(user.primaryUserType)
+        if (user.secondaryUserType) userTypes.add(user.secondaryUserType)
+      })
+      return Array.from(userTypes)
+    }
+
+    setDynamicUserTypes(getAllUserTypes())
+  }, [users])
+
+  useEffect(() => {
+    if (selectedUserType === "All") {
+      setFilteredUsers(users)
+    } else {
+      setFilteredUsers(
+        users.filter(
+          (user) => user.primaryUserType === selectedUserType || user.secondaryUserType === selectedUserType,
+        ),
+      )
+    }
+  }, [selectedUserType, users])
 
   const filteredProjects = useMemo(() => {
     if (!projects) return []
@@ -144,73 +176,143 @@ export default function CreatorsScreen() {
     [router, currentUser, handleDeleteProject],
   )
 
+  const renderUserItem = useCallback(
+    ({ item }) => (
+      <TouchableOpacity style={styles.userItem} onPress={() => router.push(`/user/${item.id}`)}>
+        <View style={styles.userItemContent}>
+          <View style={styles.userInfo}>
+            <Text style={styles.userName}>{item.username}</Text>
+            <Text style={styles.userJoinDate}>Joined: {new Date(item.createdAt).toLocaleDateString()}</Text>
+            <Text style={styles.userType}>
+              {item.primaryUserType}
+              {item.secondaryUserType && ` / ${item.secondaryUserType}`}
+            </Text>
+          </View>
+          <Image
+            source={{ uri: item.avatar || "https://picsum.photos/seed/default/200" }}
+            style={styles.userAvatar}
+            defaultSource={{ uri: "https://picsum.photos/seed/default/200" }}
+          />
+        </View>
+      </TouchableOpacity>
+    ),
+    [router],
+  )
+
   return (
     <SafeAreaView style={styles.container}>
       <BlurView intensity={60} style={StyleSheet.absoluteFill} tint="dark" />
       <View style={styles.header}>
-        <View style={styles.searchContainer}>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search projects..."
-            placeholderTextColor={theme.colors.textSecondary}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-          <Search color={theme.colors.textSecondary} size={20} style={styles.searchIcon} />
+        <View style={styles.tabContainer}>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === "projects" && styles.activeTab]}
+            onPress={() => setActiveTab("projects")}
+          >
+            <Text style={[styles.tabText, activeTab === "projects" && styles.activeTabText]}>Project Pages</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === "allTrove" && styles.activeTab]}
+            onPress={() => setActiveTab("allTrove")}
+          >
+            <Text style={[styles.tabText, activeTab === "allTrove" && styles.activeTabText]}>All Trove</Text>
+          </TouchableOpacity>
         </View>
-      </View>
-      <SectionList
-        sections={groupedProjects}
-        renderItem={renderProjectItem}
-        renderSectionHeader={({ section: { date } }) => <DaySeparator date={date} />}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        ListHeaderComponent={
-          <>
-            <FlatList
-              horizontal
-              data={PROJECT_TYPES}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[styles.typeChip, selectedType === item && styles.selectedType]}
-                  onPress={() => setSelectedType(item)}
-                >
-                  <Text style={styles.typeText}>{item}</Text>
-                </TouchableOpacity>
-              )}
-              keyExtractor={(item) => item}
-              showsHorizontalScrollIndicator={false}
-              style={styles.typeFilter}
+        {activeTab === "projects" && (
+          <View style={styles.searchContainer}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search projects..."
+              placeholderTextColor={theme.colors.textSecondary}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
             />
-            {isAuthenticated && (
-              <TouchableOpacity style={styles.addButton} onPress={() => setShowAddProjectForm(true)}>
-                <Plus color={theme.colors.background} size={24} />
-                <Text style={styles.addButtonText}>NEW PROJECT</Text>
-              </TouchableOpacity>
-            )}
-          </>
-        }
-        ListEmptyComponent={
-          isLoading ? (
-            <ActivityIndicator size="large" color={theme.colors.primary} />
-          ) : (
-            <Text style={styles.emptyListText}>No projects found</Text>
-          )
-        }
-      />
-      <Modal visible={showAddProjectForm} transparent={true} animationType="fade">
-        <AddProjectForm onClose={() => setShowAddProjectForm(false)} />
-      </Modal>
-      <ConfirmationDialog
-        isVisible={showDeleteConfirmation}
-        title="Delete Project"
-        message="Are you sure you want to delete this project? This action cannot be undone."
-        onConfirm={confirmDeleteProject}
-        onCancel={() => {
-          setShowDeleteConfirmation(false)
-          setProjectToDelete(null)
-        }}
-      />
+            <Search color={theme.colors.textSecondary} size={20} style={styles.searchIcon} />
+          </View>
+        )}
+      </View>
+      {activeTab === "projects" ? (
+        <>
+          <SectionList
+            sections={groupedProjects}
+            renderItem={renderProjectItem}
+            renderSectionHeader={({ section: { date } }) => <DaySeparator date={date} />}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.listContent}
+            ListHeaderComponent={
+              <>
+                <FlatList
+                  horizontal
+                  data={PROJECT_TYPES}
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      style={[styles.typeChip, selectedType === item && styles.selectedType]}
+                      onPress={() => setSelectedType(item)}
+                    >
+                      <Text style={styles.typeText}>{item}</Text>
+                    </TouchableOpacity>
+                  )}
+                  keyExtractor={(item) => item}
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.typeFilter}
+                />
+                {isAuthenticated && (
+                  <TouchableOpacity style={styles.addButton} onPress={() => setShowAddProjectForm(true)}>
+                    <Plus color={theme.colors.background} size={24} />
+                    <Text style={styles.addButtonText}>NEW PROJECT PAGE</Text>
+                  </TouchableOpacity>
+                )}
+              </>
+            }
+            ListEmptyComponent={
+              isLoading ? (
+                <ActivityIndicator size="large" color={theme.colors.primary} />
+              ) : (
+                <Text style={styles.emptyListText}>No projects found</Text>
+              )
+            }
+          />
+          <Modal visible={showAddProjectForm} transparent={true} animationType="fade">
+            <AddProjectForm onClose={() => setShowAddProjectForm(false)} />
+          </Modal>
+          <ConfirmationDialog
+            isVisible={showDeleteConfirmation}
+            title="Delete Project"
+            message="Are you sure you want to delete this project? This action cannot be undone."
+            onConfirm={confirmDeleteProject}
+            onCancel={() => {
+              setShowDeleteConfirmation(false)
+              setProjectToDelete(null)
+            }}
+          />
+        </>
+      ) : (
+        <View style={styles.allTroveContainer}>
+          <FlatList
+            ListHeaderComponent={
+              <FlatList
+                horizontal
+                data={dynamicUserTypes}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={[styles.typeChip, selectedUserType === item && styles.selectedType]}
+                    onPress={() => setSelectedUserType(item)}
+                  >
+                    <Text style={styles.typeText}>{item}</Text>
+                  </TouchableOpacity>
+                )}
+                keyExtractor={(item) => item}
+                showsHorizontalScrollIndicator={false}
+                style={styles.typeFilter}
+              />
+            }
+            data={filteredUsers}
+            renderItem={renderUserItem}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.allTroveContent}
+            ListEmptyComponent={<Text style={styles.emptyListText}>No users found</Text>}
+          />
+        </View>
+      )}
     </SafeAreaView>
   )
 }
@@ -232,6 +334,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surface,
     borderRadius: 20,
     marginHorizontal: 20,
+    marginTop: 15,
     paddingHorizontal: 15,
     height: 40,
   },
@@ -385,6 +488,70 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginHorizontal: 10,
     fontFamily: theme.fonts.regular,
+  },
+  tabContainer: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  tab: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+  },
+  activeTab: {
+    borderBottomWidth: 2,
+    borderBottomColor: theme.colors.primary,
+  },
+  tabText: {
+    color: theme.colors.textSecondary,
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  activeTabText: {
+    color: theme.colors.primary,
+  },
+  allTroveContainer: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+  },
+  allTroveContent: {
+    padding: 20,
+  },
+  userItem: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  userItemContent: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  userInfo: {
+    flex: 1,
+  },
+  userName: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: theme.colors.text,
+  },
+  userJoinDate: {
+    fontSize: 14,
+    color: theme.colors.textSecondary,
+    marginTop: 5,
+  },
+  userAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginLeft: 10,
+  },
+  userType: {
+    fontSize: 14,
+    color: theme.colors.textSecondary,
+    marginTop: 5,
   },
 })
 
